@@ -1,0 +1,47 @@
+/* ── Node hover ─────────────────────────────────────────── */
+.react-flow__node {
+  transition: filter 0.25s ease, transform 0.25s ease !important;
+}
+
+.react-flow__node:hover {
+  transform: scale(1.08) !important;
+  filter: brightness(1.15) drop-shadow(0 0 12px rgba(99,102,241,0.6));
+}
+
+/* ── Edges ──────────────────────────────────────────────── */
+.react-flow__edge {
+  transition: opacity 0.3s ease !important;
+}
+
+.react-flow__edge.selected path {
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.4));
+}
+
+/* ── Controls ───────────────────────────────────────────── */
+.react-flow__controls {
+  opacity: 1;
+}
+
+.react-flow__controls button {
+  transition: background 0.2s ease, transform 0.2s ease !important;
+}
+
+.react-flow__controls button:hover {
+  background-color: rgba(255,255,255,0.18) !important;
+  transform: scale(1.06);
+}
+
+/* ── MiniMap ────────────────────────────────────────────── */
+.react-flow__minimap {
+  opacity: 1;
+}
+
+/* ── Selected node ──────────────────────────────────────── */
+.react-flow__node.selected {
+  filter: drop-shadow(0 0 14px rgba(99,102,241,0.7));
+}
+
+/* ── Handle ─────────────────────────────────────────────── */
+.react-flow__handle {
+  opacity: 0;
+}

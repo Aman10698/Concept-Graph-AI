@@ -1,0 +1,517 @@
+/* ============================================================
+   LANDING PAGE — ConceptGraphAI  (matches reference screenshot)
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+/* ── Root ──────────────────────────────────────────────────── */
+.lp-root {
+  min-height: 100vh;
+  background: #f5f7ff;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #1a2340;
+  overflow-x: hidden;
+}
+
+/* ── Navbar ────────────────────────────────────────────────── */
+.lp-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(255,255,255,0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid #e8eaf6;
+  box-shadow: 0 1px 12px rgba(99,102,241,0.07);
+}
+
+.lp-nav-inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 40px;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lp-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.lp-logo-icon {
+  width: 38px;
+  height: 38px;
+  background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(99,102,241,0.28);
+  flex-shrink: 0;
+}
+
+.lp-logo-text {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #1a2340;
+  letter-spacing: -0.02em;
+}
+
+.lp-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+}
+
+.lp-nav-link {
+  font-size: 0.925rem;
+  font-weight: 500;
+  color: #4b5563;
+  text-decoration: none;
+  transition: color 0.2s;
+  position: relative;
+  padding-bottom: 2px;
+}
+
+.lp-nav-link:hover { color: #6366f1; }
+
+.lp-nav-active {
+  color: #6366f1 !important;
+  font-weight: 600;
+}
+
+.lp-nav-active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0; right: 0;
+  height: 2px;
+  background: #6366f1;
+  border-radius: 2px;
+}
+
+.lp-nav-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+}
+
+/* ── Buttons ───────────────────────────────────────────────── */
+.lp-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%);
+  color: #fff;
+  font-weight: 700;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.18s, box-shadow 0.18s;
+  font-family: inherit;
+  letter-spacing: 0;
+}
+
+.lp-btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(99,102,241,0.38);
+}
+
+.lp-btn-hero {
+  padding: 14px 32px;
+  font-size: 1rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgba(99,102,241,0.28);
+  align-self: flex-start;
+}
+
+/* ── Hero ──────────────────────────────────────────────────── */
+.lp-hero {
+  padding: 60px 40px 60px;
+  display: flex;
+  align-items: center;
+}
+
+.lp-hero-inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 64px;
+  align-items: center;
+  width: 100%;
+}
+
+.lp-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Badge */
+.lp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(99,102,241,0.08);
+  border: 1px solid rgba(99,102,241,0.2);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #6366f1;
+  width: fit-content;
+}
+
+/* Heading */
+.lp-hero-heading {
+  font-size: clamp(2.2rem, 3.5vw, 3.2rem);
+  font-weight: 900;
+  line-height: 1.12;
+  color: #0f172a;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+
+.lp-hero-heading-accent {
+  color: #6366f1;
+}
+
+.lp-hero-sub {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #4b5563;
+  max-width: 380px;
+  margin: 0;
+}
+
+/* Feature mini-pills row */
+.lp-feature-pills {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.lp-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #e8eaf6;
+  border-radius: 10px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+  flex-shrink: 0;
+}
+
+.lp-pill-icon { font-size: 1.15rem; }
+
+.lp-pill-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1a2340;
+  margin: 0;
+}
+
+.lp-pill-sub {
+  font-size: 0.68rem;
+  color: #9ca3af;
+  margin: 0;
+}
+
+/* ── Map card (right side) ─────────────────────────────────── */
+.lp-map-card {
+  background: #fff;
+  border: 1px solid #e8eaf6;
+  border-radius: 20px;
+  box-shadow: 0 8px 40px rgba(99,102,241,0.1), 0 2px 8px rgba(0,0,0,0.04);
+  padding: 20px 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  animation: lp-fadeIn 0.8s ease-out;
+}
+
+/* Legend inside the card */
+.lp-map-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.lp-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.lp-legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Insight box at the bottom of the card */
+.lp-insight-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #fafbff;
+  border: 1px solid #e8eaf6;
+  border-radius: 12px;
+  margin-top: 12px;
+}
+
+.lp-insight-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+.lp-insight-text {
+  font-size: 0.82rem;
+  color: #374151;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Concept Map canvas area ───────────────────────────────── */
+.lp-hero-map {
+  position: relative;
+  height: 320px;
+}
+
+.lp-concept-map-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.lp-concept-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.lp-edge-line {
+  animation: lp-edgeDraw 1.2s ease-out forwards;
+}
+
+.lp-nodes-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lp-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1.5px solid transparent;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+  white-space: nowrap;
+  animation: lp-nodeIn 0.6s ease-out forwards;
+  pointer-events: all;
+  cursor: default;
+  transition: box-shadow 0.2s, transform 0.2s;
+  font-size: 0.85rem;
+}
+
+.lp-node:hover {
+  box-shadow: 0 6px 20px rgba(99,102,241,0.18);
+  transform: translate(-50%, calc(-50% - 2px));
+}
+
+.lp-node-center {
+  padding: 12px 24px;
+  font-size: 1rem;
+  font-weight: 700;
+  z-index: 10;
+  box-shadow: 0 4px 20px rgba(99,102,241,0.18);
+  background: #fff !important;
+  border-color: #6366f1 !important;
+  color: #1a2340;
+}
+
+.lp-node-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 900;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.lp-node-label {
+  font-size: 0.85rem;
+  letter-spacing: -0.01em;
+}
+
+/* ── How It Works ──────────────────────────────────────────── */
+.lp-how {
+  background: #fff;
+  border-top: 1px solid #e8eaf6;
+  padding: 64px 40px 80px;
+}
+
+.lp-how-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
+}
+
+.lp-how-header {
+  text-align: center;
+}
+
+.lp-how-title {
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.03em;
+  margin: 0 0 6px;
+}
+
+.lp-how-sub {
+  font-size: 0.9rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.lp-how-steps {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.lp-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex: 1;
+  min-width: 200px;
+  max-width: 240px;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 12px;
+}
+
+.lp-step-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+  margin-bottom: 4px;
+}
+
+.lp-step-icon-blue   { background: linear-gradient(135deg, #3b82f6, #6366f1); }
+.lp-step-icon-purple { background: linear-gradient(135deg, #8b5cf6, #a855f7); }
+.lp-step-icon-green  { background: linear-gradient(135deg, #10b981, #22c55e); }
+.lp-step-icon-orange { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+
+.lp-step-num-badge {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #818cf8);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 6px;
+}
+
+.lp-step-num {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.lp-step-desc {
+  font-size: 0.8rem;
+  color: #6b7280;
+  line-height: 1.55;
+}
+
+.lp-step-arrow {
+  font-size: 1.1rem;
+  color: #c7d2fe;
+  letter-spacing: -3px;
+  flex-shrink: 0;
+  align-self: center;
+  margin-top: -40px;
+  padding: 0 2px;
+  font-weight: 400;
+}
+
+/* ── Animations ─────────────────────────────────────────────── */
+@keyframes lp-fadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes lp-nodeIn {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 10px)); }
+  to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+@keyframes lp-edgeDraw {
+  from { stroke-dashoffset: 400; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 960px) {
+  .lp-hero-inner {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+  .lp-hero { padding: 48px 24px 48px; }
+  .lp-hero-map { height: 280px; }
+  .lp-how-steps { flex-direction: column; align-items: center; gap: 24px; }
+  .lp-step { max-width: 100%; flex-direction: row; text-align: left; align-items: flex-start; }
+  .lp-step-num-badge { margin: 0; }
+  .lp-step-arrow { display: none; }
+}
+
+@media (max-width: 600px) {
+  .lp-nav-inner { padding: 0 20px; }
+  .lp-hero-heading { font-size: 2rem; }
+  .lp-hero-map { height: 240px; }
+  .lp-node { padding: 6px 12px; }
+  .lp-node-label { font-size: 0.75rem; }
+  .lp-node-center { padding: 10px 18px; }
+  .lp-feature-pills { gap: 8px; }
+  .lp-how { padding: 48px 20px 60px; }
+}

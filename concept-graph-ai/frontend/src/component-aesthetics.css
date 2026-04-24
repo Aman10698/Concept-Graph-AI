@@ -1,0 +1,292 @@
+/* ============================================
+   COMPONENT-SPECIFIC AESTHETIC ENHANCEMENTS
+   ============================================ */
+
+/* ============== UPLOAD COMPONENT ============== */
+.upload-container {
+  animation: fadeInScale 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.drag-zone {
+  border: 2px dashed rgba(59, 130, 246, 0.3);
+  border-radius: 1.5rem;
+  transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.drag-zone::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(59, 130, 246, 0.1) 50%,
+    transparent 70%
+  );
+  background-size: 200% 200%;
+  animation: buttonShimmer 2s infinite;
+  display: none;
+}
+
+.drag-zone:hover::before {
+  display: block;
+}
+
+.drag-zone:hover {
+  border-color: rgba(59, 130, 246, 0.6);
+  background: rgba(59, 130, 246, 0.05);
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.3), inset 0 0 30px rgba(59, 130, 246, 0.05);
+}
+
+.drag-zone.active {
+  border-color: rgba(59, 130, 246, 1);
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 50px rgba(59, 130, 246, 0.5), inset 0 0 50px rgba(59, 130, 246, 0.1);
+  transform: scale(1.02);
+}
+
+.upload-icon {
+  animation: float 3s ease-in-out infinite;
+}
+
+.progress-bar-enhanced {
+  background: linear-gradient(
+    90deg,
+    rgba(59, 130, 246, 0.3),
+    rgba(139, 92, 246, 0.3),
+    rgba(59, 130, 246, 0.3)
+  );
+  background-size: 200% 100%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.progress-fill {
+  background: linear-gradient(
+    90deg,
+    #3b82f6,
+    #8b5cf6,
+    #06b6d4
+  );
+  background-size: 200% 100%;
+  height: 100%;
+  border-radius: 0.5rem;
+  animation: progressGlow 2s ease-in-out infinite;
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* ============== QUIZ COMPONENT ============== */
+.quiz-container {
+  animation: fadeInScale 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.quiz-question {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  padding: 2rem;
+  border-radius: 1.5rem;
+  animation: slideInLeft 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  backdrop-filter: blur(20px);
+}
+
+.quiz-question:hover {
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 0 40px rgba(59, 130, 246, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.quiz-option {
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: fadeInScale 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.quiz-option:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.5);
+  transform: translateX(8px);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.quiz-option.selected {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(139, 92, 246, 0.2) 100%);
+  border-color: rgba(59, 130, 246, 0.8);
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transform: scale(1.02);
+}
+
+.quiz-option.correct {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(16, 185, 129, 0.1) 100%);
+  border-color: rgba(16, 185, 129, 0.8);
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.5);
+}
+
+.quiz-option.incorrect {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(239, 68, 68, 0.1) 100%);
+  border-color: rgba(239, 68, 68, 0.8);
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+  animation: shake 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.quiz-answer {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+  border-left: 4px solid rgba(59, 130, 246, 0.5);
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+  backdrop-filter: blur(10px);
+  animation: slideInRight 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ============== DASHBOARD COMPONENT ============== */
+.dashboard-container {
+  animation: fadeInScale 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.stat-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+  transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: fadeInScale 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.stat-card:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.06) 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(59, 130, 246, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.stat-value {
+  font-size: 2.5rem;
+  font-weight: 900;
+  background: linear-gradient(120deg, #3b82f6, #8b5cf6, #ec4899);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradientShift 3s ease-in-out infinite;
+}
+
+.progress-ring {
+  animation: spin 3s linear infinite;
+}
+
+.topic-pill {
+  display: inline-block;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.1) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
+  margin: 0.25rem;
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.topic-pill:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.4) 0%, rgba(139, 92, 246, 0.2) 100%);
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  transform: scale(1.05);
+}
+
+.recommendation-card {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: slideInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.recommendation-card:hover {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(59, 130, 246, 0.1) 100%);
+  border-color: rgba(16, 185, 129, 0.6);
+  transform: translateY(-4px);
+  box-shadow: 0 10px 30px rgba(16, 185, 129, 0.2);
+}
+
+/* ============== CIRCULAR PROGRESS ============== */
+.circular-progress {
+  filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.3));
+  animation: spin 2s linear infinite;
+}
+
+.circular-progress circle:last-child {
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.6));
+  animation: none;
+}
+
+/* ============== STATUS BADGES ============== */
+.badge-excellent {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(16, 185, 129, 0.1) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #86efac;
+  animation: fadeInScale 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.badge-good {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(59, 130, 246, 0.1) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+  animation: fadeInScale 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.badge-needs-work {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.3) 0%, rgba(249, 115, 22, 0.1) 100%);
+  border: 1px solid rgba(249, 115, 22, 0.4);
+  color: #fed7aa;
+  animation: fadeInScale 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ============== RESPONSIVE STAGGER ============== */
+.stagger-children > * {
+  animation: fadeInScale 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.stagger-children > *:nth-child(1) { animation-delay: 0.1s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.2s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.3s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.4s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.5s; }
+.stagger-children > *:nth-child(n+6) { animation-delay: 0.6s; }
+
+/* ============== ACCESSIBILITY ============== */
+@media (prefers-reduced-motion: reduce) {
+  .quiz-option,
+  .stat-card,
+  .progress-fill,
+  .drag-zone {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ============== DARK MODE COLORS ============== */
+.dark-theme {
+  --color-surface: rgba(15, 23, 42, 0.8);
+  --color-border: rgba(203, 213, 225, 0.1);
+  --color-text: #f1f5f9;
+  --color-text-secondary: rgba(241, 245, 249, 0.6);
+}
+
+/* ============== ENHANCED TRANSITIONS ============== */
+.smooth-transition {
+  transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.instant-response {
+  transition: all 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+}
