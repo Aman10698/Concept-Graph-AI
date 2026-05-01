@@ -1,6 +1,6 @@
 /**
- * Dependency Analysis Service — 100% Ollama-powered
- * Replaces the hardcoded CS/Math dictionary with AI-driven prerequisite mapping.
+ * Dependency Analysis Service — Gemini AI-powered
+ * Uses Google Gemini for AI-driven prerequisite mapping.
  */
 
 const ollamaService = require('./ollamaService');
@@ -24,16 +24,16 @@ const analyzeDependencies = async (topics, docText = '', subject = '') => {
 
   if (topicNames.length === 0) return emptyResult();
 
-  console.log('🤖 [Ollama] Analysing topic dependencies...');
+  console.log('✨ [Gemini] Analysing topic dependencies...');
 
   const aiResult = await ollamaService.analyzeDependencies(topicNames, docText, subject || '');
 
   if (!aiResult || (!Array.isArray(aiResult.dependencies) && !Array.isArray(aiResult.treeNodes))) {
-    console.warn('⚠️  Ollama dependency analysis failed — returning empty graph');
+    console.warn('⚠️  Gemini dependency analysis failed — returning empty graph');
     return emptyResult(topicNames);
   }
 
-  // Map Ollama output → internal graph structure
+  // Map Gemini output → internal graph structure
   const relationships = (aiResult.dependencies || []).map(dep => ({
     source:      dep.from   || dep.source || '',
     target:      dep.to     || dep.target || '',
@@ -66,7 +66,7 @@ const analyzeDependencies = async (topics, docText = '', subject = '') => {
     confidence: rel.confidence,
   }));
 
-  console.log(`✅ [Ollama] Found ${relationships.length} dependency relationships`);
+  console.log(`✅ [Gemini] Found ${relationships.length} dependency relationships`);
 
   return {
     treeNodes:    aiResult.treeNodes    || [],   // hierarchical tree for RootCauseGraph

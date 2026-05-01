@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import QuestionPractice from '../components/QuestionPractice'
 import QuizMindMap from '../components/QuizMindMap'
+import BloomPanel from '../components/BloomPanel'
 import LearningPathPanel from '../components/LearningPathPanel'
 import RootCauseGraph from '../components/RootCauseGraph'
 import { useAuth } from '../context/AuthContext'
@@ -31,10 +32,10 @@ export default function PracticePage() {
   const [dependencyData, setDependencyData] = useState(null)
   const [evalData,       setEvalData]       = useState({})
   const [selectedTopic,  setSelectedTopic]  = useState(null)
+  const [bloomNode,      setBloomNode]      = useState(null)  // { name, parentName }
   const [generatingFor,  setGeneratingFor]  = useState(null)
   const [sessionText,    setSessionText]    = useState('')
   const [sessionTitle,   setSessionTitle]   = useState('My Course')
-  const [showRootCause,  setShowRootCause]  = useState(false)
   const [quizCompleted,  setQuizCompleted]  = useState(false)
 
   const { user } = useAuth()
@@ -297,9 +298,8 @@ export default function PracticePage() {
               onEvaluationUpdate={handleEvalUpdate}
               onWeakAnswerDetected={() => {}}
               onComplete={() => {
-                setQuizCompleted(true)   // mark at least one quiz done
-                setSelectedTopic(null)   // back to mind map
-                setShowRootCause(true)   // auto-open root cause panel
+                setQuizCompleted(true)
+                setSelectedTopic(null)
               }}
             />
           </div>
@@ -333,87 +333,55 @@ export default function PracticePage() {
         <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em', marginBottom: 4 }}>
           Quizzes
         </h1>
-        <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>
-          {allGreen
-            ? '🎉 All topics mastered! You can retake any topic anytime.'
-            : `${masteredCount} / ${topics.length} mastered — click any node to start a quiz`}
-        </p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
 
         {/* ── LEFT: Mind map ── */}
         <div>
-          {/* Progress bar */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#6b7280' }}>Overall Progress</span>
-              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6366f1' }}>{masteredCount}/{topics.length} Mastered</span>
-            </div>
-            <div style={{ height: 7, background: '#e2e8f0', borderRadius: 999, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${topics.length > 0 ? (masteredCount / topics.length) * 100 : 0}%`,
-                background: 'linear-gradient(90deg,#6366f1,#22c55e)',
-                borderRadius: 999, transition: 'width 0.6s ease',
-              }} />
-            </div>
-          </div>
 
-          {/* Mind map canvas */}
-          <div className="t-card" style={{ padding: '18px', background: 'linear-gradient(135deg,#f8faff 0%,#f0f4ff 100%)' }}>
-            <QuizMindMap
-              topics={topics}
-              evalData={evalData}
-              courseTitle={sessionTitle}
-              onSelectTopic={setSelectedTopic}
-              onSelectSubtopic={(subtopicName) => setSelectedTopic(subtopicName)}
-            />
-          </div>
-
-          <p style={{ fontSize: '0.75rem', color: '#9ca3af', textAlign: 'center', marginTop: 10 }}>
-            Hover a node to preview • Click to start quiz
-          </p>
-
-          {/* Dependency graph button — always based on quiz performance */}
-          {topics.length > 0 && (
-            <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}>
-              <button
-                onClick={() => setShowRootCause(v => !v)}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 8,
-                  padding: '10px 24px', borderRadius: 10, fontWeight: 700, fontSize: '0.88rem',
-                  background: showRootCause
-                    ? '#fef2f2' : 'linear-gradient(135deg,#ef4444,#f97316)',
-                  color: showRootCause ? '#ef4444' : '#fff',
-                  border: showRootCause ? '1.5px solid #fca5a5' : 'none',
-                  cursor: 'pointer',
-                  boxShadow: showRootCause ? 'none' : '0 2px 12px rgba(239,68,68,0.3)',
-                  transition: 'all 0.2s',
+          {/* Mind map canvas OR inline Bloom panel */}
+          {bloomNode ? (
+            <div className="t-card" style={{ padding: 0, overflow: 'hidden' }}>
+              <BloomPanel
+                concept={bloomNode.name}
+                parentTopic={bloomNode.parentName}
+                onQuizComplete={({ concept, score, rating, nodes = [], improvements = [] }) => {
+                  // Update evalData so the mind map node recolours immediately
+                  setEvalData(prev => {
+                    const merged = { ...prev, [concept]: { score, rating } }
+                    localStorage.setItem('learningEvaluationData', JSON.stringify(merged))
+                    // Store dep graph data for Prerequisite Graph
+                    const depGraphs = (() => {
+                      try { return JSON.parse(localStorage.getItem('topicDepGraphs') || '{}') } catch { return {} }
+                    })()
+                    depGraphs[concept] = { score, rating, nodes, improvements, testedAt: Date.now() }
+                    localStorage.setItem('topicDepGraphs', JSON.stringify(depGraphs))
+                    return merged
+                  })
                 }}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <circle cx="11" cy="11" r="8"/>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-                {showRootCause ? 'Hide Dependency Graph' : 'Find Root Cause (based on quiz results)'}
-              </button>
+                onClose={() => setBloomNode(null)}
+                inline
+              />
             </div>
-          )}
-
-          {/* Root cause dependency graph */}
-          {showRootCause && (
-            <div style={{ marginTop: 20 }}>
-              <RootCauseGraph
+          ) : (
+            <div className="t-card" style={{ padding: '18px', background: 'linear-gradient(135deg,#f8faff 0%,#f0f4ff 100%)' }}>
+              <QuizMindMap
+                key={JSON.stringify(Object.keys(evalData).map(k => evalData[k]?.rating))}
                 topics={topics}
                 evalData={evalData}
-                dependencyData={dependencyData}
                 courseTitle={sessionTitle}
-                onClose={() => setShowRootCause(false)}
-                onPractice={(name) => { setShowRootCause(false); setSelectedTopic(name) }}
+                onSelectTopic={setSelectedTopic}
+                onSelectSubtopic={(subtopicName) => setSelectedTopic(subtopicName)}
+                onCardClick={(name, parentName) => setBloomNode({ name, parentName })}
               />
             </div>
           )}
+
+          <p style={{ fontSize: '0.75rem', color: '#9ca3af', textAlign: 'center', marginTop: 10 }}>
+            {bloomNode ? '' : 'Hover a node to preview • Click to open Bloom practice'}
+          </p>
+
 
           {/* Learning path for weak topics */}
           {weakTopics.length > 0 && (

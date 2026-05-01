@@ -15,7 +15,9 @@ import QuestionsDisplay from '../components/QuestionsDisplay';
 import QuestionPractice from '../components/QuestionPractice';
 import WeaknessTraceViewer from '../components/WeaknessTraceViewer';
 import DependencyViewer from '../components/DependencyViewer';
+import DependencyGraph from '../components/DependencyGraph';
 import ErrorDisplay from '../components/ErrorDisplay';
+import BloomPanel from '../components/BloomPanel';
 import { persistGraphData } from '../services/dataPersistence';
 import { persistSessionData, persistEvaluation } from '../services/mongoProgressService';
 import {
@@ -120,9 +122,9 @@ const ResultsSummary = ({ topicsData, evaluationData, onGoToRootCause }) => {
   const unrated = rated.filter(r => !r.rating);
 
   const RATING_STYLE = {
-    strong:  { bg: 'rgba(34,197,94,0.08)',  border: '#22c55e', color: '#166534', badge: 't-badge-green',  icon: '💪' },
-    partial: { bg: 'rgba(245,158,11,0.08)', border: '#f59e0b', color: '#92400e', badge: 't-badge-amber',  icon: '⚡' },
-    weak:    { bg: 'rgba(239,68,68,0.08)',   border: '#ef4444', color: '#991b1b', badge: 't-badge-red',    icon: '⚠️' },
+    strong:  { bg: 'rgba(34,197,94,0.08)',  border: '#22c55e', color: '#166534', badge: 't-badge-green'  },
+    partial: { bg: 'rgba(245,158,11,0.08)', border: '#f59e0b', color: '#92400e', badge: 't-badge-amber'  },
+    weak:    { bg: 'rgba(239,68,68,0.08)',   border: '#ef4444', color: '#991b1b', badge: 't-badge-red'    },
   };
 
   return (
@@ -195,6 +197,12 @@ const ConceptGraphPage = () => {
   const [extractedText, setExtractedText] = useState('');
   const [topicsData, setTopicsData]       = useState(null);
   const [evaluationData, setEvaluationData] = useState({});
+  const [topicDepGraphs, setTopicDepGraphs] = useState(() => {
+    // Rehydrate from localStorage on mount
+    try { return JSON.parse(localStorage.getItem('topicDepGraphs') || '{}'); }
+    catch { return {}; }
+  });
+  const [selectedDepTopic, setSelectedDepTopic] = useState(null);
   const [selectedWeakTopic, setSelectedWeakTopic] = useState(null);
   const [practiceTopicId, setPracticeTopicId]     = useState(null);
   const [activeSessionId, setActiveSessionId]     = useState(() => getActiveSessionId());
@@ -204,6 +212,9 @@ const ConceptGraphPage = () => {
   const [onDemandQuestions, setOnDemandQuestions] = useState([]);
   const [fetchingQuestions, setFetchingQuestions] = useState(false);
   const [questionFetchKey, setQuestionFetchKey] = useState(0);
+
+  // ── Bloom's modal (mind map node click) ──
+  const [bloomTopic, setBloomTopic] = useState(null); // { name, parent }
 
   // ── mind-map sub-tab ──
   const [mapTab, setMapTab] = useState('mindmap');
@@ -285,17 +296,11 @@ const ConceptGraphPage = () => {
     }
   };
 
-  /* ── build graph + generate questions when topics arrive ── */
+  /* ── build graph when topics arrive (questions generated on-demand via BloomPanel) ── */
   useEffect(() => {
     if (topicsData?.topics) {
       graph.convertTopicsToGraph(topicsData.topics, topicsData.subject || '');
       if (topicsData.topics.length > 0) {
-        questionGeneration.generate(topicsData.topics, extractedText).then((qData) => {
-          completeStep('questions');
-          // Update session with generated questions
-          if (activeSessionId && qData)
-            updateSessionData(activeSessionId, { questionsData: qData });
-        });
         dependencyAnalysis.analyze(topicsData.topics, extractedText).then((depData) => {
           if (activeSessionId && depData)
             updateSessionData(activeSessionId, { dependencyData: depData });
@@ -311,6 +316,35 @@ const ConceptGraphPage = () => {
       completeStep('mindmap');
     }
   }, [wizardStep, topicsData]);
+
+  /* ── BOOTSTRAP: restore session data from localStorage on mount ── */
+  useEffect(() => {
+    const raw = localStorage.getItem('learningTopicsData');
+    if (!raw) return;  // no previous data — stay on upload screen
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed?.topics?.length) return;
+
+      // Restore topics
+      setTopicsData(parsed);
+
+      // Restore evaluation data
+      const evalRaw = localStorage.getItem('learningEvaluationData');
+      if (evalRaw) {
+        try { setEvaluationData(JSON.parse(evalRaw)); } catch (_) {}
+      }
+
+      // Restore extracted text (needed for on-demand question gen)
+      // (stored separately by the session service)
+      // Jump straight to mind map — skip upload & topics steps
+      setCompletedSteps(new Set(['upload', 'topics', 'mindmap']));
+      setWizardStep('mindmap');
+    } catch (err) {
+      console.warn('[ConceptGraphPage] Failed to restore session from localStorage:', err);
+    }
+  // Run only once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ── persist topics to localStorage + MongoDB ── */
   useEffect(() => {
@@ -600,7 +634,7 @@ const ConceptGraphPage = () => {
             <div className="t-card" style={{ textAlign: 'center', padding: '48px 32px' }}>
               <p style={{ fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>Could not generate questions</p>
               <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: 20 }}>
-                Make sure Ollama is running, then try again.
+                Make sure Ollama is running locally, then try again.
               </p>
               <button onClick={() => { setOnDemandQuestions([]); setQuestionFetchKey(k => k + 1); }} className="t-btn t-btn-primary t-btn-sm" style={{ marginRight: 10 }}>
                 Retry
@@ -638,10 +672,20 @@ const ConceptGraphPage = () => {
         </div>
         {mapTab === 'mindmap' && topicsData && (
           <MindMapViewer
+            key={JSON.stringify(Object.keys(evaluationData).map(k => evaluationData[k]?.rating))}
             topics={topicsData.topics}
             subject={topicsData.subject || ''}
             evaluationData={evaluationData}
-            onTopicClick={name => { setPracticeTopicId(name); }}
+            onTopicClick={(name, parent) => {
+              // Find parent topic name if the clicked node is a subtopic
+              const parentName = parent ||
+                topicsData.topics.find(t =>
+                  (t.subtopics || []).some(s =>
+                    (typeof s === 'string' ? s : s.name) === name
+                  )
+                )?.name || null;
+              setBloomTopic({ name, parent: parentName });
+            }}
           />
         )}
         {mapTab === 'graph' && graph.graph && (
@@ -864,25 +908,30 @@ const ConceptGraphPage = () => {
   };
 
   const renderDepGraph = () => {
-    const answeredEntries = Object.entries(evaluationData).filter(([, ev]) => ev?.rating);
-    const answeredCount   = answeredEntries.length;
-
     /* colour helpers */
-    const ratingColor  = r => r === 'strong' ? '#22c55e' : r === 'partial' || r === 'moderate' ? '#f59e0b' : r === 'weak' ? '#ef4444' : '#9ca3af';
-    const ratingLabel  = r => r === 'strong' ? 'Strong' : r === 'partial' || r === 'moderate' ? 'Partial' : r === 'weak' ? 'Needs Work' : 'Untested';
+    const ratingColor = r =>
+      r === 'strong' ? '#22c55e' : r === 'partial' || r === 'moderate' ? '#f59e0b' : r === 'weak' ? '#ef4444' : '#9ca3af';
+    const ratingLabel = r =>
+      r === 'strong' ? 'Strong' : r === 'partial' || r === 'moderate' ? 'Partial' : r === 'weak' ? 'Needs Work' : 'Not Tested';
+
+    // Topics that have been quizzed (exist in topicDepGraphs)
+    const testedTopics = Object.entries(topicDepGraphs);
+
+    // Currently selected topic's dep graph
+    const selected = selectedDepTopic ? topicDepGraphs[selectedDepTopic] : null;
 
     return (
       <>
         <SectionHeader
-          title="Prerequisite Knowledge Graph"
-          subtitle="For each topic you've practised, the AI identifies what foundational knowledge you're missing"
+          title="Prerequisite Graph"
+          subtitle="Select a topic you've quizzed to see its prerequisite dependency graph"
         />
 
-        {answeredCount === 0 ? (
+        {testedTopics.length === 0 ? (
           <div style={{ padding: '40px 32px', textAlign: 'center', background: '#f8faff', borderRadius: 14, border: '1.5px solid #e2e8f0' }}>
             <p style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a', marginBottom: 8 }}>No quiz results yet</p>
             <p style={{ fontSize: '0.85rem', color: '#6b7280', maxWidth: 380, margin: '0 auto 20px' }}>
-              Click any node in the Mind Map to take a quiz. After answering, come back here to see which prerequisite concepts you're missing.
+              Click any node in the Mind Map to take a quiz. After completing it, come back here to see your prerequisite dependency graph.
             </p>
             <button onClick={() => setWizardStep('mindmap')} className="t-btn t-btn-primary t-btn-sm">
               Go to Mind Map →
@@ -890,138 +939,89 @@ const ConceptGraphPage = () => {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {answeredEntries.map(([topicName, ev]) => {
-              const rating   = ev.rating;
-              const score    = ev.score ?? 0;
-              const missing  = ev.missingConcepts ?? [];
-              const improvements = ev.improvements ?? [];
-              const color    = ratingColor(rating);
-              const isWeak   = rating === 'weak';
-              const isPartial = rating === 'partial' || rating === 'moderate';
-              const needsWork = isWeak || isPartial;
 
-              /* Is this the one currently being deep-analysed? */
-              const isSelected = selectedWeakTopic === topicName;
-              const isAnalysing = isSelected && weaknessAnalysis.isAnalyzing;
-
-              return (
-                <div key={topicName} className="t-card" style={{
-                  padding: '20px 22px',
-                  borderLeft: `4px solid ${color}`,
-                  background: isWeak ? '#fffafa' : isPartial ? '#fffdf5' : '#f9fffe',
-                }}>
-                  {/* ── Header row ── */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 12, height: 12, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                      <p style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>{topicName}</p>
+            {/* ── Topic picker grid ── */}
+            <div className="t-card" style={{ padding: '20px 22px' }}>
+              <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 14 }}>
+                Topics Tested — click to view prerequisite graph
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                {testedTopics.map(([name, data]) => {
+                  const color   = ratingColor(data.rating);
+                  const isSel   = selectedDepTopic === name;
+                  return (
+                    <button
+                      key={name}
+                      onClick={() => setSelectedDepTopic(isSel ? null : name)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '9px 16px', borderRadius: 10, fontFamily: 'inherit',
+                        fontWeight: 600, fontSize: '0.84rem', cursor: 'pointer',
+                        background: isSel ? `${color}18` : '#f8faff',
+                        border: `2px solid ${isSel ? color : '#e2e8f0'}`,
+                        color: isSel ? color : '#374151',
+                        boxShadow: isSel ? `0 0 0 3px ${color}22` : 'none',
+                        transition: 'all 0.18s',
+                      }}
+                    >
+                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                      {name}
                       <span style={{
-                        fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-                        background: `${color}20`, color, textTransform: 'uppercase',
-                      }}>{ratingLabel(rating)}</span>
-                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6366f1' }}>{score}%</span>
-                    </div>
-                    {needsWork && (
-                      <button
-                        onClick={() => handleDeepAnalyse(topicName)}
-                        disabled={isAnalysing}
-                        className="t-btn t-btn-danger t-btn-sm"
-                      >
-                        {isAnalysing
-                          ? 'Analysing…'
-                          : (isSelected && weaknessAnalysis.weaknessTrace)
-                            ? 'Hide Analysis ✕'
-                            : 'Deep Analyse with AI'}
-                      </button>
+                        fontSize: '0.68rem', fontWeight: 700,
+                        padding: '1px 7px', borderRadius: 999,
+                        background: `${color}20`, color,
+                      }}>
+                        {data.score}%
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* dep graph for selected topic */}
+            {selectedDepTopic && selected && (
+              <div className="t-card" style={{
+                padding: '22px 24px',
+                borderLeft: `4px solid ${ratingColor(selected.rating)}`,
+                background: selected.rating === 'weak' ? '#fffafa' : selected.rating === 'partial' ? '#fffdf5' : '#f9fffe',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: ratingColor(selected.rating), flexShrink: 0 }} />
+                  <p style={{ fontWeight: 800, fontSize: '1rem', color: '#0f172a' }}>{selectedDepTopic}</p>
+                  <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                    background: `${ratingColor(selected.rating)}20`, color: ratingColor(selected.rating),
+                    textTransform: 'uppercase' }}>{ratingLabel(selected.rating)}</span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#6366f1', marginLeft: 4 }}>{selected.score}%</span>
+                </div>
+                {selected.nodes && selected.nodes.length > 0 ? (
+                  <div>
+                    <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
+                      Prerequisite dependency graph — AI-generated from your quiz
+                    </p>
+                    <DependencyGraph nodes={selected.nodes} />
+                    {selected.improvements && selected.improvements.length > 0 && (
+                      <div style={{ marginTop: 16, padding: '12px 16px', borderRadius: 10, background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.14)' }}>
+                        <p style={{ fontSize: '0.73rem', fontWeight: 700, color: '#6366f1', marginBottom: 8 }}>What to study next:</p>
+                        <ul style={{ paddingLeft: 18, margin: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {selected.improvements.slice(0, 4).map((tip, ti) => (
+                            <li key={ti} style={{ fontSize: '0.8rem', color: '#374151' }}>{tip}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                   </div>
+                ) : selected.rating === 'strong' ? (
+                  <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                    <p style={{ fontWeight: 700, color: '#15803d', fontSize: '0.95rem', marginBottom: 4 }}>No prerequisite gaps!</p>
+                    <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>You demonstrated solid understanding of this topic.</p>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>No dependency data available for this topic yet.</p>
+                )}
+              </div>
+            )}
 
-                  {/* ── Missing concepts as prerequisite nodes ── */}
-                  {missing.length > 0 ? (
-                    <div>
-                      <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
-                        Prerequisite gaps identified by AI
-                      </p>
-                      {/* Visual tree: topic → missing concepts */}
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 0 }}>
-                        {/* Root node */}
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 120 }}>
-                          <div style={{
-                            padding: '8px 14px', borderRadius: 10,
-                            background: `${color}15`, border: `2px solid ${color}`,
-                            fontSize: '0.78rem', fontWeight: 700, color, textAlign: 'center',
-                            maxWidth: 130,
-                          }}>
-                            {topicName}
-                          </div>
-                        </div>
-
-                        {/* Arrow + prerequisites */}
-                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 12px', paddingTop: 10 }}>
-                          <span style={{ fontSize: '1.1rem', color: '#94a3b8' }}>←</span>
-                          <span style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600, whiteSpace: 'nowrap' }}>requires</span>
-                        </div>
-
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, paddingTop: 4 }}>
-                          {missing.map((concept, ci) => (
-                            <div key={ci} style={{
-                              padding: '8px 14px', borderRadius: 10,
-                              background: '#fff1f2', border: '2px solid #fca5a5',
-                              fontSize: '0.78rem', fontWeight: 600, color: '#b91c1c',
-                              display: 'flex', alignItems: 'center', gap: 6,
-                            }}>
-                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', flexShrink: 0, display: 'inline-block' }} />
-                              {concept}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Improvement hints */}
-                      {improvements.length > 0 && (
-                        <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 8, background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.12)' }}>
-                          <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#6366f1', marginBottom: 6 }}>What to study next:</p>
-                          <ul style={{ paddingLeft: 16, margin: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            {improvements.slice(0, 3).map((tip, ti) => (
-                              <li key={ti} style={{ fontSize: '0.78rem', color: '#374151' }}>{tip}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  ) : rating === 'strong' ? (
-                    <p style={{ fontSize: '0.82rem', color: '#15803d', fontWeight: 500 }}>
-                      No prerequisite gaps — you demonstrated solid understanding of this topic.
-                    </p>
-                  ) : (
-                    <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>
-                      Answer the questions for this topic to see your prerequisite gaps.
-                    </p>
-                  )}
-
-                  {/* ── Deep AI Analysis result (from Ollama) ── */}
-                  {isSelected && !isAnalysing && weaknessAnalysis.weaknessTrace && (
-                    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1.5px solid #f1f5f9' }}>
-                      <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
-                        AI Deep Analysis
-                      </p>
-                      <WeaknessTraceViewer
-                        weaknessTrace={weaknessAnalysis.weaknessTrace}
-                        isLoading={false}
-                        error={weaknessAnalysis.error}
-                        onSelectConcept={() => {}}
-                      />
-                    </div>
-                  )}
-                  {isSelected && isAnalysing && (
-                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, color: '#6b7280', fontSize: '0.82rem' }}>
-                      <div className="t-spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                      Ollama is tracing prerequisite gaps for "{topicName}"…
-                    </div>
-                  )}
-                </div>
-              );
-            })}
           </div>
         )}
       </>
@@ -1180,7 +1180,7 @@ const ConceptGraphPage = () => {
               className="t-btn t-btn-ghost t-btn-sm"
               style={{ width: '100%', marginTop: 16 }}
             >
-              🔄 Start Over
+              Start Over
             </button>
           )}
         </div>
@@ -1242,6 +1242,30 @@ const ConceptGraphPage = () => {
             onRetry={() => { if (wizardStep === 'upload') handleReset(); }}
           />
         </div>
+      )}
+
+      {/* ── Bloom's Taxonomy Modal — shown when a mind map node is clicked ── */}
+      {bloomTopic && (
+        <BloomPanel
+          concept={bloomTopic.name}
+          parentTopic={bloomTopic.parent}
+          onQuizComplete={({ concept, score, rating, nodes = [], improvements = [] }) => {
+            // 1. Recolour the mind map node
+            handleEvalUpdate({ [concept]: { score, rating } });
+            // 2. Store the dep graph for this topic
+            setTopicDepGraphs(prev => {
+              const updated = { ...prev, [concept]: { score, rating, nodes, improvements, testedAt: Date.now() } };
+              localStorage.setItem('topicDepGraphs', JSON.stringify(updated));
+              if (activeSessionId) updateSessionData(activeSessionId, { topicDepGraphs: updated });
+              return updated;
+            });
+          }}
+          onClose={() => {
+            setBloomTopic(null);
+            // Mark mindmap step done so the next-step CTA appears
+            completeStep('mindmap');
+          }}
+        />
       )}
     </div>
   );

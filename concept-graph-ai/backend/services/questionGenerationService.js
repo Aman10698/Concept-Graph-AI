@@ -1,6 +1,6 @@
 /**
- * Question Generation Service — 100% Ollama-powered
- * Replaces static template strings with AI-generated, document-grounded questions.
+ * Question Generation Service — Gemini AI-powered
+ * Uses Google Gemini for document-grounded question generation.
  */
 
 const ollamaService = require('./ollamaService');
@@ -8,7 +8,7 @@ const ollamaService = require('./ollamaService');
 /**
  * Generate questions from extracted topic data.
  * @param {Array} topicsData  - Array of topic objects { name, subtopics, description }
- * @param {string} docText    - Original document text (gives Ollama rich context)
+ * @param {string} docText    - Original document text (gives Gemini rich context)
  * @returns {object} { questions, totalQuestions, questionsByType, questionsByDifficulty }
  */
 const generateQuestionsFromTopics = async (topicsData, docText = '') => {
@@ -16,7 +16,7 @@ const generateQuestionsFromTopics = async (topicsData, docText = '') => {
     throw new Error('Invalid topics data — cannot generate questions');
   }
 
-  console.log('🤖 [Ollama] Generating questions...');
+  console.log('✨ [Gemini] Generating questions...');
 
   const topicNames = topicsData.map(t => (typeof t === 'string' ? t : t.name)).filter(Boolean);
 
@@ -35,11 +35,11 @@ const generateQuestionsFromTopics = async (topicsData, docText = '') => {
   );
 
   if (!questions || questions.length === 0) {
-    console.warn('⚠️  Ollama returned no questions — using fallback');
+    console.warn('⚠️  Gemini returned no questions — using fallback');
     return fallbackQuestions(topicNames);
   }
 
-  console.log(`✅ [Ollama] Generated ${questions.length} questions`);
+  console.log(`✅ [Gemini] Generated ${questions.length} questions`);
 
   return {
     questions,

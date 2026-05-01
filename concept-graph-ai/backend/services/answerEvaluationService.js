@@ -1,6 +1,6 @@
 /**
- * Answer Evaluation Service — 100% Ollama-powered
- * Replaces keyword-overlap scoring with deep AI evaluation.
+ * Answer Evaluation Service — Gemini AI-powered
+ * Uses Google Gemini for deep answer evaluation.
  */
 
 const ollamaService = require('./ollamaService');
@@ -21,7 +21,7 @@ const evaluateAnswer = async (studentAnswer, question, topic = '') => {
     return errorResult('Question not provided for evaluation');
   }
 
-  console.log('🤖 [Ollama] Evaluating answer...');
+  console.log('✨ [Gemini] Evaluating answer...');
 
   // Pass topic as a key-concept hint so Ollama knows what to look for
   const keyConcepts = topic ? [topic] : [];
@@ -29,11 +29,11 @@ const evaluateAnswer = async (studentAnswer, question, topic = '') => {
   const result = await ollamaService.evaluateAnswer(question, studentAnswer, keyConcepts);
 
   if (!result) {
-    console.warn('⚠️  Ollama evaluation returned null — falling back');
+    console.warn('⚠️  Gemini evaluation returned null — falling back');
     return fallbackEvaluation(studentAnswer, topic);
   }
 
-  console.log(`✅ [Ollama] Evaluation: ${result.rating} (score: ${result.score})`);
+  console.log(`✅ [Gemini] Evaluation: ${result.rating} (score: ${result.score})`);
   return result;
 };
 

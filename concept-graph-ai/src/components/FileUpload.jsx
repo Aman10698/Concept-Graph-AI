@@ -104,7 +104,14 @@ const FileUpload = ({ onUploadSuccess, onUploadError }) => {
           fontSize: '1.6rem',
           boxShadow: '0 4px 12px rgba(99,102,241,0.15)',
         }}>
-          {isUploading ? '⏳' : isDragging ? '📂' : '📄'}
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"
+            stroke={isUploading ? '#16a34a' : isDragging ? '#6366f1' : '#3b82f6'}
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {isUploading
+              ? <><circle cx="12" cy="12" r="10"/><polyline points="8 12 12 8 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></>
+              : <><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></>
+            }
+          </svg>
         </div>
 
         {isUploading ? (
@@ -140,7 +147,7 @@ const FileUpload = ({ onUploadSuccess, onUploadError }) => {
               boxShadow: '0 4px 12px rgba(99,102,241,0.25)',
               pointerEvents: 'none',   /* click handled by parent */
             }}>
-              📁 Choose File
+              Choose File
             </div>
           </div>
         )}
@@ -149,7 +156,7 @@ const FileUpload = ({ onUploadSuccess, onUploadError }) => {
       {/* Error */}
       {error && (
         <div style={{ marginTop: 12, padding: '10px 16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 9 }}>
-          <p style={{ fontSize: '0.85rem', color: '#dc2626', fontWeight: 600 }}>⚠️ {error}</p>
+          <p style={{ fontSize: '0.85rem', color: '#dc2626', fontWeight: 600 }}>{error}</p>
         </div>
       )}
     </div>

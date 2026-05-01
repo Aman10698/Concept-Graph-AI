@@ -1,90 +1,203 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
-import { drawCircleLabel } from '../utils/canvasTextUtils'
 
-/* ── colour helpers ─────────────────────────────────────────── */
+/* ── layout constants ── */
+const ROOT_W = 210, ROOT_H = 84
+const TOPIC_W = 165, TOPIC_H = 88
+const SUB_W   = 148, SUB_H   = 64
+const H_GAP1  = 72   // root → topics
+const H_GAP2  = 48   // topics → subtopics
+const V_GAP   = 12   // between sibling subtopics
+const COL_GAP = 28   // horizontal gap between topic columns
+const PAD     = 56   // canvas padding
+const MIN_SCALE = 0.08, MAX_SCALE = 4
+const CANVAS_H  = 680
+
+/* ── colour helpers ── */
 const ratingColor = r =>
-  r === 'strong'  ? '#22c55e'
+  r === 'strong' ? '#22c55e'
   : r === 'partial' || r === 'moderate' ? '#f59e0b'
-  : r === 'weak'  ? '#ef4444'
+  : r === 'weak' ? '#ef4444'
   : '#6366f1'
 
-/* Roll up subtopic ratings into a single parent rating */
-const aggregateRating = (ratings) => {
-  const valid = ratings.filter(Boolean)
-  if (!valid.length) return undefined
-  if (valid.every(r => r === 'strong'))  return 'strong'
-  if (valid.some(r => r === 'weak'))     return 'weak'
+const ratingLabel = r =>
+  r === 'strong' ? 'Strong'
+  : r === 'partial' || r === 'moderate' ? 'Partial'
+  : r === 'weak' ? 'Weak'
+  : 'Not Practiced'
+
+const aggregateRating = arr => {
+  const v = arr.filter(Boolean)
+  if (!v.length) return undefined
+  if (v.every(r => r === 'strong')) return 'strong'
+  if (v.some(r  => r === 'weak'))   return 'weak'
   return 'partial'
 }
 
-/* wrapText and drawLabel replaced by shared drawCircleLabel from canvasTextUtils */
+/* ── build world-space layout ── */
+function buildLayout(topics, evalData) {
+  const cols = topics.map(t => ({
+    name: typeof t === 'string' ? t : t.name,
+    desc: typeof t === 'object' ? (t.description || '') : '',
+    subs: typeof t === 'object' && Array.isArray(t.subtopics)
+      ? t.subtopics.map(s => typeof s === 'string' ? s : (s.name || '')).filter(Boolean)
+      : [],
+  }))
 
-/* ── draw an arrowed line between two circles ───────────────── */
-function drawArrow(ctx, x1, y1, x2, y2, r1, r2, color, dashLen = 0) {
-  const angle = Math.atan2(y2 - y1, x2 - x1)
-  const dist  = Math.hypot(x2 - x1, y2 - y1)
-  if (dist < r1 + r2 + 4) return   // nodes too close – skip
+  const colW   = Math.max(SUB_W, TOPIC_W) + COL_GAP
+  const totalW = cols.length * colW - COL_GAP + PAD * 2
+  const rootX  = totalW / 2 - ROOT_W / 2
+  const rootY  = PAD
+  const nodes  = []
 
-  const sx = x1 + r1 * Math.cos(angle)
-  const sy = y1 + r1 * Math.sin(angle)
-  const ex = x2 - r2 * Math.cos(angle)
-  const ey = y2 - r2 * Math.sin(angle)
+  nodes.push({ id: '__root__', kind: 'root', x: rootX, y: rootY, w: ROOT_W, h: ROOT_H })
 
+  const topicY = rootY + ROOT_H + H_GAP1
+  cols.forEach((col, ci) => {
+    // Parent topic colour rules:
+    //  1. If the topic node itself was directly quizzed → use its own rating
+    //  2. Else if ALL subtopics have been tested → aggregate their ratings
+    //  3. Else → undefined (indigo "Not Practiced")
+    const subRatings = col.subs.map(s => evalData?.[s]?.rating)
+    const allSubsTested = col.subs.length > 0 && subRatings.every(r => r != null)
+    const rating = evalData?.[col.name]?.rating
+      ?? (allSubsTested ? aggregateRating(subRatings) : undefined)
+    const cx = PAD + ci * colW + (colW - COL_GAP) / 2
+    const tX = cx - TOPIC_W / 2
+    nodes.push({
+      id: `t${ci}`, kind: 'topic', name: col.name, desc: col.desc,
+      x: tX, y: topicY, w: TOPIC_W, h: TOPIC_H,
+      rating, parent: '__root__', subs: col.subs,
+    })
+    const subY0 = topicY + TOPIC_H + H_GAP2
+    col.subs.forEach((sName, si) => {
+      nodes.push({
+        id: `s${ci}_${si}`, kind: 'subtopic', name: sName, desc: '',
+        x: cx - SUB_W / 2, y: subY0 + si * (SUB_H + V_GAP), w: SUB_W, h: SUB_H,
+        rating: evalData?.[sName]?.rating,   // only use its OWN rating — never inherit parent's
+        parent: `t${ci}`,
+      })
+    })
+  })
+
+  const maxSubs = Math.max(...cols.map(c => c.subs.length), 0)
+  const totalH  = topicY + TOPIC_H + H_GAP2 + maxSubs * (SUB_H + V_GAP) + PAD
+  return { nodes, totalW, totalH }
+}
+
+/* ── canvas helpers ── */
+function rrect(ctx, x, y, w, h, r) {
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); return }
   ctx.beginPath()
-  ctx.moveTo(sx, sy)
-  ctx.lineTo(ex, ey)
-  ctx.strokeStyle = color
-  ctx.lineWidth   = dashLen ? 1.2 : 1.8
-  if (dashLen) ctx.setLineDash([dashLen, 4])
-  ctx.stroke()
-  ctx.setLineDash([])
-
-  /* arrowhead */
-  const AL = 8, AA = Math.PI / 6
-  ctx.beginPath()
-  ctx.moveTo(ex, ey)
-  ctx.lineTo(ex - AL * Math.cos(angle - AA), ey - AL * Math.sin(angle - AA))
-  ctx.lineTo(ex - AL * Math.cos(angle + AA), ey - AL * Math.sin(angle + AA))
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r)
+  ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
+  ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r)
+  ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r)
   ctx.closePath()
-  ctx.fillStyle = color
-  ctx.fill()
 }
 
-/* ── draw a filled circle with white border ─────────────────── */
-function drawCircle(ctx, x, y, r, fillColor, glow = false, lineW = 2.5) {
-  if (glow) {
-    ctx.beginPath(); ctx.arc(x, y, r + 8, 0, 2 * Math.PI)
-    ctx.fillStyle = fillColor + '22'; ctx.fill()
+function wrapText(ctx, text, x, y, maxW, lineH, maxLines = 2) {
+  const words = text.split(' ')
+  let line = '', lines = []
+  for (const word of words) {
+    const t = line ? line + ' ' + word : word
+    if (ctx.measureText(t).width > maxW && line) {
+      lines.push(line); line = word
+      if (lines.length >= maxLines) break
+    } else { line = t }
   }
-  ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI)
-  ctx.fillStyle   = fillColor
-  ctx.shadowColor = glow ? fillColor + 'aa' : 'transparent'
-  ctx.shadowBlur  = glow ? 18 : 0
-  ctx.fill(); ctx.shadowBlur = 0
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = lineW; ctx.stroke()
+  if (line && lines.length < maxLines) lines.push(line)
+  lines.forEach((l, i) => ctx.fillText(l, x, y + i * lineH))
+  return y + lines.length * lineH
 }
 
-/* drawLabel is now drawCircleLabel from canvasTextUtils */
+function drawBezierArrow(ctx, x1, y1, x2, y2, color) {
+  const my = (y1 + y2) / 2
+  ctx.beginPath()
+  ctx.moveTo(x1, y1)
+  ctx.bezierCurveTo(x1, my, x2, my, x2, y2 - 6)
+  ctx.strokeStyle = color + 'bb'; ctx.lineWidth = 1.8; ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(x2, y2)
+  ctx.lineTo(x2 - 5, y2 - 9); ctx.lineTo(x2 + 5, y2 - 9)
+  ctx.closePath(); ctx.fillStyle = color + 'bb'; ctx.fill()
+}
 
-/* ── distribute N angles evenly within an angular sector ───── */
-function sectorAngles(center, totalArc, count) {
-  if (count === 1) return [center]
-  return Array.from({ length: count }, (_, i) =>
-    center - totalArc / 2 + (totalArc / (count - 1)) * i
-  )
+function drawCard(ctx, node, isHov, courseTitle) {
+  const { x, y, w, h, kind, name, rating } = node
+  const col   = ratingColor(rating)
+  const R = 12
+
+  /* shadow */
+  ctx.shadowColor   = isHov ? col + '55' : 'rgba(0,0,0,0.10)'
+  ctx.shadowBlur    = isHov ? 22 : 10
+  ctx.shadowOffsetY = isHov ? 5 : 3
+
+  if (kind === 'root') {
+    const g = ctx.createLinearGradient(x, y, x + w, y + h)
+    g.addColorStop(0, '#4f46e5'); g.addColorStop(1, '#7c3aed')
+    rrect(ctx, x, y, w, h, R); ctx.fillStyle = g; ctx.fill()
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
+    rrect(ctx, x, y, w, h, R)
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1.5; ctx.stroke()
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 14px Inter,sans-serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(courseTitle || 'Course', x + w / 2, y + h / 2)
+  } else {
+    /* white card */
+    rrect(ctx, x, y, w, h, R); ctx.fillStyle = '#fff'; ctx.fill()
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
+    /* top colour bar */
+    ctx.save(); rrect(ctx, x, y, w, h, R); ctx.clip()
+    ctx.fillStyle = col; ctx.fillRect(x, y, w, 4); ctx.restore()
+    /* border */
+    rrect(ctx, x, y, w, h, R)
+    ctx.strokeStyle = col + (isHov ? 'cc' : '44')
+    ctx.lineWidth = isHov ? 2 : 1.5; ctx.stroke()
+
+    const pad = 10
+    let curY = y + 14
+    /* name */
+    ctx.fillStyle = '#1e293b'
+    ctx.font = `bold ${kind === 'topic' ? 12 : 11}px Inter,sans-serif`
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+    curY = wrapText(ctx, name, x + pad, curY, w - pad * 2, kind === 'topic' ? 15 : 13, 2) + 4
+
+    /* rating badge */
+    const label = ratingLabel(rating)
+    ctx.font = 'bold 8px Inter,sans-serif'
+    const bw = ctx.measureText(label).width + 12, bh = 14, br = 7
+    rrect(ctx, x + pad, curY, bw, bh, br)
+    ctx.fillStyle = col + '22'; ctx.fill()
+    ctx.strokeStyle = col + '55'; ctx.lineWidth = 1
+    rrect(ctx, x + pad, curY, bw, bh, br); ctx.stroke()
+    ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(label, x + pad + bw / 2, curY + bh / 2)
+
+    /* hover hint */
+    if (isHov) {
+      ctx.font = '8px Inter,sans-serif'
+      ctx.fillStyle = col; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'
+      ctx.fillText('Quiz →', x + w - pad, y + h - pad / 2)
+    }
+  }
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
 }
 
 /* ══════════════════════════════════════════════════════════════
    COMPONENT
 ══════════════════════════════════════════════════════════════ */
-export default function QuizMindMap({ topics, evalData, courseTitle, onSelectTopic, onSelectSubtopic }) {
+export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = '', onSelectTopic, onSelectSubtopic, onCardClick }) {
   const wrapRef   = useRef(null)
   const canvasRef = useRef(null)
   const nodesRef  = useRef([])
-  const [hovered, setHovered] = useState(null)
-  const [width,   setWidth]   = useState(0)
+  const vpRef     = useRef({ ox: 0, oy: 0, scale: 1 })
+  const dragRef   = useRef(null)
+  const [hovered,   setHovered]   = useState(null)
+  const [width,     setWidth]     = useState(0)
+  const [vpVer,     setVpVer]     = useState(0)
 
-  /* observe container width */
+  /* observe width */
   useEffect(() => {
     const el = wrapRef.current; if (!el) return
     const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width || el.offsetWidth))
@@ -92,210 +205,224 @@ export default function QuizMindMap({ topics, evalData, courseTitle, onSelectTop
     return () => ro.disconnect()
   }, [])
 
-  /* ── DRAW ── */
+  /* fit-to-view */
+  const fitView = useCallback(() => {
+    const vw = wrapRef.current?.offsetWidth || width
+    const vh = CANVAS_H
+    const { nodes } = buildLayout(topics, evalData)
+    if (!nodes.length) return
+    const xs = nodes.map(n => [n.x, n.x + n.w]).flat()
+    const ys = nodes.map(n => [n.y, n.y + n.h]).flat()
+    const minX = Math.min(...xs), maxX = Math.max(...xs)
+    const minY = Math.min(...ys), maxY = Math.max(...ys)
+    const tw = maxX - minX + PAD * 2, th = maxY - minY + PAD * 2
+    const s  = Math.min(vw / tw, vh / th, 1)
+    vpRef.current = {
+      scale: s,
+      ox: (vw - tw * s) / 2 - minX * s + PAD * s,
+      oy: (vh - th * s) / 2 - minY * s + PAD * s,
+    }
+    setVpVer(v => v + 1)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [width, topics])
+
+  /* DRAW */
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !topics.length || width < 80) return
     const ctx = canvas.getContext('2d')
-
-    const N = topics.length
-
-    // Collect ALL subtopics — no limit, no cuts
-    const subsPerTopic = topics.map(t =>
-      typeof t === 'object' && Array.isArray(t.subtopics)
-        ? t.subtopics.map(s => typeof s === 'string' ? s : (s.name || '')).filter(Boolean)
-        : []
-    )
-    const maxSubsAny = Math.max(...subsPerTopic.map(s => s.length), 1)
-
-    // ── Fixed node radii ──
-    const CR = 68, TR = 54, SR = 36
-    const GAP_T = 24   // minimum gap between topic node edges
-    const GAP_S = 20   // minimum gap between subtopic node edges
-
-    const SECTOR = (2 * Math.PI) / N
-
-    // ── RING1: circumference must seat all N topic nodes without touching ──
-    const RING1 = Math.max(180, Math.ceil(N * (2 * TR + GAP_T) / (2 * Math.PI)))
-
-    // ── RING2: derived so busiest topic fills only 78% of its sector ──
-    // neededArc = subs*(2SR+GAP_S)/RING2 ≤ SECTOR*0.78
-    // → RING2 ≥ maxSubs*(2SR+GAP_S) / (SECTOR*0.78)
-    const FILL = 0.78
-    const RING2_fromSubs = maxSubsAny <= 1
-      ? 0
-      : Math.ceil(maxSubsAny * (2 * SR + GAP_S) / (SECTOR * FILL))
-    // Also clear topic nodes radially
-    const RING2 = Math.max(RING1 + TR + SR + 55, RING2_fromSubs)
-
-    // ── Canvas: square big enough for RING2 + node radius + padding ──
-    const PAD  = SR + 90
-    const SIZE = Math.max(Math.ceil((RING2 + PAD) * 2), width)
-    const W = SIZE, H = SIZE
-    const cx = W / 2, cy = H / 2
-
     const dpr = window.devicePixelRatio || 1
-    canvas.width        = Math.round(W * dpr)
-    canvas.height       = Math.round(H * dpr)
-    canvas.style.width  = W + 'px'
-    canvas.style.height = H + 'px'
+    const W   = Math.max(width, 300)
+    const H   = CANVAS_H
+    canvas.width  = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px'
+
+    const { nodes } = buildLayout(topics, evalData)
+    nodesRef.current = nodes
+
+    const { ox, oy, scale } = vpRef.current
+    ctx.save()
     ctx.scale(dpr, dpr)
     ctx.clearRect(0, 0, W, H)
+    ctx.translate(ox, oy)
+    ctx.scale(scale, scale)
 
-    // ── Gather all node positions ──
-    const allNodes = []
+    /* PASS 1 — arrows */
+    const byId = Object.fromEntries(nodes.map(n => [n.id, n]))
+    nodes.filter(n => n.parent).forEach(n => {
+      const p  = byId[n.parent]; if (!p) return
+      const col = ratingColor(n.rating)
+      drawBezierArrow(ctx,
+        p.x + p.w / 2, p.y + p.h,
+        n.x + n.w / 2, n.y,
+        col)
+    })
 
-    topics.forEach((t, i) => {
-      const tName = typeof t === 'string' ? t : t.name
-      const subs  = subsPerTopic[i]
+    /* PASS 2 — cards */
+    nodes.forEach(n => drawCard(ctx, n, hovered?.id === n.id, courseTitle))
 
-      const ownRating       = evalData?.[tName]?.rating
-      const effectiveRating = ownRating ?? aggregateRating(subs.map(s => evalData?.[s]?.rating))
+    ctx.restore()
+  }, [topics, evalData, courseTitle, hovered, width, vpVer])
 
-      const θ  = (2 * Math.PI * i) / N - Math.PI / 2
-      const tx = cx + RING1 * Math.cos(θ)
-      const ty = cy + RING1 * Math.sin(θ)
+  /* fit on first load */
+  useEffect(() => {
+    if (width > 0 && topics.length) {
+      const id = setTimeout(fitView, 120)
+      return () => clearTimeout(id)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topics, width])
 
-      allNodes.push({ name: tName, x: tx, y: ty, kind: 'topic', parent: null, rating: effectiveRating })
-
-      if (subs.length > 0) {
-        // Arc for THIS topic's subtopics — guaranteed ≤ SECTOR*FILL, so no cross-topic collision
-        const arc = subs.length === 1 ? 0
-          : (subs.length * (2 * SR + GAP_S)) / RING2   // always ≤ SECTOR*FILL by RING2 construction
-
-        const angles = sectorAngles(θ, arc, subs.length)
-        angles.forEach((sθ, si) => {
-          const sx = cx + RING2 * Math.cos(sθ)
-          const sy = cy + RING2 * Math.sin(sθ)
-          const subOwnRating = evalData?.[subs[si]]?.rating ?? effectiveRating
-          allNodes.push({ name: subs[si], x: sx, y: sy, kind: 'subtopic', parent: tName, rating: subOwnRating })
-        })
+  /* ── Scroll-to-zoom — ONLY fires when mouse is over the canvas ── */
+  useEffect(() => {
+    const el = canvasRef.current; if (!el) return
+    const onWheel = (e) => {
+      e.preventDefault()   // blocks page scroll + browser zoom ONLY while over canvas
+      const rect   = el.getBoundingClientRect()
+      const { ox, oy, scale } = vpRef.current
+      const factor = e.deltaY < 0 ? 1.06 : 1 / 1.06
+      const ns  = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor))
+      const mx  = e.clientX - rect.left
+      const my  = e.clientY - rect.top
+      vpRef.current = {
+        scale: ns,
+        ox: mx - (mx - ox) * (ns / scale),
+        oy: my - (my - oy) * (ns / scale),
       }
-    })
+      setVpVer(v => v + 1)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])   // canvas ref never changes, so [] is fine
 
-    nodesRef.current = allNodes
-
-    /* ─── PASS 1: Edges ─── */
-    allNodes.filter(n => n.kind === 'topic').forEach(tn => {
-      const tColor = ratingColor(tn.rating)
-      drawArrow(ctx, cx, cy, tn.x, tn.y, CR, TR, 'rgba(99,102,241,0.5)', 0)
-      allNodes.filter(n => n.kind === 'subtopic' && n.parent === tn.name).forEach(sn => {
-        drawArrow(ctx, tn.x, tn.y, sn.x, sn.y, TR, SR, tColor + '88', 5)
-      })
-    })
-
-    /* ─── PASS 2: Center node ─── */
-    const cGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, CR)
-    cGrad.addColorStop(0, '#818cf8'); cGrad.addColorStop(1, '#4f46e5')
-    ctx.beginPath(); ctx.arc(cx, cy, CR, 0, 2 * Math.PI)
-    ctx.fillStyle = cGrad
-    ctx.shadowColor = 'rgba(99,102,241,0.55)'; ctx.shadowBlur = 22
-    ctx.fill(); ctx.shadowBlur = 0
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2.5; ctx.stroke()
-    drawCircleLabel(ctx, courseTitle || 'Course', cx, cy, CR, 14, true)
-
-    /* ─── PASS 3: Topic + subtopic nodes ─── */
-    allNodes.forEach(n => {
-      const isTopic = n.kind === 'topic'
-      const isHov   = hovered?.name === n.name
-      const color   = ratingColor(n.rating)
-      const NR      = isTopic ? TR : SR
-
-      drawCircle(ctx, n.x, n.y, NR,
-        isTopic ? (isHov ? color : color + 'dd') : (isHov ? color : color + 'aa'),
-        isHov, isTopic ? 2.5 : 1.8)
-      drawCircleLabel(ctx, n.name, n.x, n.y, NR, isTopic ? 13 : 10, isTopic && isHov)
-
-      if (isHov) {
-        const pill = isTopic ? (n.rating ? 'Retake quiz →' : 'Start quiz →') : 'Quiz this subtopic →'
-        ctx.font = `bold 8px Inter,sans-serif`
-        const pw = ctx.measureText(pill).width + 14
-        const px = n.x - pw / 2, py = n.y + NR + 7
-        ctx.beginPath()
-        ctx.roundRect ? ctx.roundRect(px, py, pw, 16, 8) : (() => ctx.rect(px, py, pw, 16))()
-        ctx.fillStyle = isTopic ? color : '#6366f1'; ctx.fill()
-        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'
-        ctx.fillText(pill, n.x, py + 8)
-      }
-    })
-
-  }, [topics, evalData, courseTitle, hovered, width])
-
-  /* ── hit-test ── */
-  const hitTest = useCallback(e => {
+  /* hit test (screen → world) */
+  const hitNode = useCallback((cx, cy) => {
     const canvas = canvasRef.current; if (!canvas) return null
     const rect = canvas.getBoundingClientRect()
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top
-    const W  = width
-    const half = Math.min(W / 2, canvas.style.height ? parseInt(canvas.style.height) / 2 : W * 0.47)
-    const TR = Math.min(62, half * 0.18) + 8
-    const SR = Math.min(42, half * 0.13) + 6
-    // check subtopics first (smaller, on outer ring)
+    const { ox, oy, scale } = vpRef.current
+    const wx = (cx - rect.left - ox) / scale
+    const wy = (cy - rect.top  - oy) / scale
     for (const n of [...nodesRef.current].reverse()) {
-      const r  = n.kind === 'subtopic' ? SR : TR
-      const dx = mx - n.x, dy = my - n.y
-      if (dx * dx + dy * dy < r * r) return n
+      if (n.kind === 'root') continue
+      if (wx >= n.x && wx <= n.x + n.w && wy >= n.y && wy <= n.y + n.h) return n
     }
     return null
-  }, [width])
+  }, [])
 
-  const onMouseMove  = useCallback(e => setHovered(hitTest(e)), [hitTest])
-  const onMouseLeave = useCallback(() => setHovered(null), [])
-  const onClick      = useCallback(e => {
-    const n = hitTest(e); if (!n) return
-    if (n.kind === 'subtopic') {
-      // Pass subtopic with its parent so questions are specific to THIS subtopic
-      if (onSelectSubtopic) {
-        onSelectSubtopic(n.name, n.parent)
-      } else {
-        onSelectTopic(n.name)
-      }
-    } else {
-      onSelectTopic(n.name)
+  /* global drag / click */
+  useEffect(() => {
+    let dragging = false, moved = false
+    let startX = 0, startY = 0, startOx = 0, startOy = 0
+
+    const onDown = e => {
+      if (e.button !== 0) return
+      dragging = true; moved = false
+      startX = e.clientX; startY = e.clientY
+      startOx = vpRef.current.ox; startOy = vpRef.current.oy
+      if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing'
     }
-  }, [hitTest, onSelectTopic, onSelectSubtopic])
+
+    const onMove = e => {
+      if (!dragging) {
+        const n = hitNode(e.clientX, e.clientY)
+        setHovered(n)
+        if (canvasRef.current) canvasRef.current.style.cursor = n ? 'pointer' : 'grab'
+        return
+      }
+      const dx = e.clientX - startX, dy = e.clientY - startY
+      if (!moved && Math.hypot(dx, dy) > 5) moved = true
+      if (moved) {
+        vpRef.current.ox = startOx + dx; vpRef.current.oy = startOy + dy
+        setVpVer(v => v + 1)
+        if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing'
+      }
+    }
+
+    const onUp = e => {
+      if (!dragging) return
+      dragging = false
+      if (!moved) {
+        const n = hitNode(e.clientX, e.clientY)
+        if (n) {
+          const parentNode = nodesRef.current.find(p => p.id === n.parent)
+          const parentName = parentNode?.name || courseTitle
+          if (onCardClick) {
+            onCardClick(n.name, parentName)
+          }
+        }
+      }
+      if (canvasRef.current) canvasRef.current.style.cursor = 'grab'
+    }
+
+    const canvas = canvasRef.current; if (!canvas) return
+    canvas.addEventListener('mousedown', onDown)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup',   onUp)
+    return () => {
+      canvas.removeEventListener('mousedown', onDown)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup',   onUp)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hitNode, onSelectTopic, onSelectSubtopic])
+
+  /* toolbar zoom */
+  const zoom = factor => {
+    const vw = wrapRef.current?.offsetWidth || width
+    const { ox, oy, scale } = vpRef.current
+    const ns = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor))
+    const mx = vw / 2, my = CANVAS_H / 2
+    vpRef.current = { scale: ns, ox: mx - (mx - ox) * (ns / scale), oy: my - (my - oy) * (ns / scale) }
+    setVpVer(v => v + 1)
+  }
+
+  const btnSt = (extra = {}) => ({
+    width: 32, height: 32, border: '1.5px solid rgba(99,102,241,0.2)',
+    borderRadius: 8, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(6px)',
+    boxShadow: '0 2px 6px rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', cursor: 'pointer', fontSize: '1rem', color: '#6366f1', ...extra,
+  })
 
   return (
-    <div style={{ position: 'relative' }}>
-      {/* overflow:auto so the canvas can scroll when larger than the page column */}
-      <div ref={wrapRef} style={{ width: '100%', overflowX: 'auto', overflowY: 'auto' }}>
-        <canvas
-          ref={canvasRef}
-          style={{ display: 'block', borderRadius: 16, cursor: hovered ? 'pointer' : 'default' }}
-          onMouseMove={onMouseMove}
-          onMouseLeave={onMouseLeave}
-          onClick={onClick}
-        />
+    <div style={{ position: 'relative', userSelect: 'none' }}>
+
+      {/* Toolbar */}
+      <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <button style={btnSt()} title="Zoom in"     onClick={() => zoom(1.12)}>＋</button>
+        <button style={btnSt()} title="Zoom out"    onClick={() => zoom(1 / 1.12)}>－</button>
+        <button style={btnSt({ fontSize: '0.72rem', fontWeight: 700 })} title="Fit view" onClick={fitView}>⊡</button>
+        <button style={btnSt({ fontSize: '0.65rem', fontWeight: 700 })} title="Reset"    onClick={() => { vpRef.current = { ox: 0, oy: 0, scale: 1 }; setVpVer(v => v + 1) }}>1:1</button>
+      </div>
+
+      {/* Hint */}
+      <div style={{
+        position: 'absolute', bottom: 46, left: '50%', transform: 'translateX(-50%)',
+        background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(6px)',
+        border: '1px solid rgba(99,102,241,0.12)', borderRadius: 999,
+        padding: '4px 14px', fontSize: '0.68rem', color: '#6b7280', pointerEvents: 'none', whiteSpace: 'nowrap',
+      }}>
+        Scroll to zoom · Drag to pan · Click a card to quiz
+      </div>
+
+      {/* Canvas */}
+      <div ref={wrapRef} style={{
+        width: '100%', height: CANVAS_H, overflow: 'hidden', borderRadius: 16,
+        background: 'linear-gradient(135deg,#f8faff 0%,#eef2ff 100%)',
+        border: '1.5px solid rgba(99,102,241,0.1)', position: 'relative',
+      }}>
+        <canvas ref={canvasRef} style={{ display: 'block', cursor: 'grab' }} />
       </div>
 
       {/* Legend */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 12, paddingLeft: 4, alignItems: 'center' }}>
-        {[
-          ['#22c55e', 'Mastered'],
-          ['#f59e0b', 'In Progress'],
-          ['#ef4444', 'Needs Work'],
-          ['#6366f1', 'Not Started'],
-        ].map(([c, l]) => (
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 10, paddingLeft: 4, alignItems: 'center' }}>
+        {[['#22c55e','Strong'],['#f59e0b','Partial'],['#ef4444','Needs Work'],['#6366f1','Not Practiced']].map(([c, l]) => (
           <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{ width: 9, height: 9, borderRadius: '50%', background: c }} />
             <span style={{ fontSize: '0.72rem', color: '#6b7280', fontWeight: 500 }}>{l}</span>
           </div>
         ))}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 6, opacity: 0.7 }}>
-          <svg width="26" height="10" viewBox="0 0 26 10">
-            <line x1="0" y1="5" x2="18" y2="5" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="4 3"/>
-            <polygon points="18,2.5 26,5 18,7.5" fill="#94a3b8"/>
-          </svg>
-          <span style={{ fontSize: '0.72rem', color: '#6b7280', fontWeight: 500 }}>Subtopic</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.7 }}>
-          <svg width="26" height="10" viewBox="0 0 26 10">
-            <line x1="0" y1="5" x2="18" y2="5" stroke="#6366f1" strokeWidth="1.8"/>
-            <polygon points="18,2.5 26,5 18,7.5" fill="#6366f1"/>
-          </svg>
-          <span style={{ fontSize: '0.72rem', color: '#6b7280', fontWeight: 500 }}>Topic</span>
-        </div>
       </div>
+
     </div>
   )
 }

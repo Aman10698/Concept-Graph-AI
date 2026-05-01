@@ -1,17 +1,17 @@
 /**
- * Weakness Analysis Service — 100% Ollama-powered
- * Replaces rule-based dependency tracing with AI root-cause analysis.
+ * Weakness Analysis Service — Gemini AI-powered
+ * Uses Google Gemini for root-cause weakness analysis.
  */
 
 const ollamaService = require('./ollamaService');
 
 /**
- * Trace weakness for a single topic using Ollama.
+ * Trace weakness for a single topic using Gemini.
  *
  * @param {string} weakTopic      - The topic the student is struggling with
  * @param {Array<string>} allTopics      - All topics in the curriculum
  * @param {object} evaluationData - Map of { topicName: evaluationResult }
- * @returns {object} Rich weakness analysis from Ollama
+ * @returns {object} Rich weakness analysis from Gemini
  */
 const traceDependencyWeakness = async (weakTopic, allTopics = [], evaluationData = {}) => {
   if (!weakTopic) {
@@ -24,16 +24,16 @@ const traceDependencyWeakness = async (weakTopic, allTopics = [], evaluationData
     };
   }
 
-  console.log(`🤖 [Ollama] Analysing weakness for: "${weakTopic}"`);
+  console.log(`✨ [Gemini] Analysing weakness for: "${weakTopic}"`);
 
   const result = await ollamaService.analyzeWeakness(weakTopic, allTopics, evaluationData);
 
   if (!result) {
-    console.warn('⚠️  Ollama weakness analysis returned null — using fallback');
+    console.warn('⚠️  Gemini weakness analysis returned null — using fallback');
     return fallbackWeakness(weakTopic);
   }
 
-  console.log(`✅ [Ollama] Root cause identified: "${result.rootCause}"`);
+  console.log(`✅ [Gemini] Root cause identified: "${result.rootCause}"`);
 
   // Normalise to the shape the rest of the app expects
   return {

@@ -43,10 +43,10 @@ export default function ProfilePage() {
   }
 
   const statCards = [
-    { label: 'Syllabuses Uploaded', value: stats.syllabuses, color: '#6366f1', icon: '📚' },
-    { label: 'Topics Extracted',    value: stats.topics,     color: '#3b82f6', icon: '🗂' },
-    { label: 'Topics Mastered',     value: stats.mastered,   color: '#22c55e', icon: '✅' },
-    { label: 'Questions Generated', value: stats.questions,  color: '#f59e0b', icon: '❓' },
+    { label: 'Syllabuses Uploaded', value: stats.syllabuses, color: '#6366f1' },
+    { label: 'Topics Extracted',    value: stats.topics,     color: '#3b82f6' },
+    { label: 'Topics Mastered',     value: stats.mastered,   color: '#22c55e' },
+    { label: 'Questions Generated', value: stats.questions,  color: '#f59e0b' },
   ]
 
   return (
@@ -100,7 +100,6 @@ export default function ProfilePage() {
           <div key={s.label} className="t-card" style={{
             padding: '18px 16px', borderLeft: `4px solid ${s.color}`, background: `${s.color}07`,
           }}>
-            <div style={{ fontSize: '1.6rem', marginBottom: 6 }}>{s.icon}</div>
             <div style={{ fontSize: '1.75rem', fontWeight: 800, color: s.color, lineHeight: 1, marginBottom: 3 }}>{s.value}</div>
             <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.label}</div>
           </div>

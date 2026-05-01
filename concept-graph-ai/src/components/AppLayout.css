@@ -3,7 +3,7 @@
    ============================================================ */
 
 .al-root {
-  display: flex;
+  display: block;
   min-height: 100vh;
   background: linear-gradient(160deg, #f0f4ff 0%, #f8faff 40%, #eef2fb 100%);
 }
@@ -208,7 +208,9 @@
 /* ── Main Area ───────────────────────────────────────────── */
 .al-main {
   margin-left: 210px;
-  flex: 1;
+  width: calc(100% - 210px);
+  min-width: 0;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
@@ -297,7 +299,7 @@
   .al-sidebar-logo-text,
   .al-nav-label,
   .al-user-info { display: none; }
-  .al-main { margin-left: 60px; }
+  .al-main { margin-left: 60px; width: calc(100% - 60px); }
   .al-content { padding: 20px 16px; }
   .al-header { padding: 0 16px; }
 }

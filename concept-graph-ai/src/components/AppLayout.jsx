@@ -18,60 +18,9 @@ const LogoSVG = () => (
 )
 
 const navItems = [
-  {
-    path: '/dashboard',
-    label: 'Dashboard',
-    key: 'dashboard',
-    icon: (
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="7" height="7" rx="1.5" />
-        <rect x="14" y="3" width="7" height="7" rx="1.5" />
-        <rect x="3" y="14" width="7" height="7" rx="1.5" />
-        <rect x="14" y="14" width="7" height="7" rx="1.5" />
-      </svg>
-    ),
-  },
-  {
-    path: '/concept-graph',
-    label: 'Learn',
-    key: 'mindmap',
-    icon: (
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="3" />
-        <circle cx="4" cy="6" r="2" />
-        <circle cx="20" cy="6" r="2" />
-        <circle cx="4" cy="18" r="2" />
-        <circle cx="20" cy="18" r="2" />
-        <line x1="12" y1="12" x2="4" y2="6" />
-        <line x1="12" y1="12" x2="20" y2="6" />
-        <line x1="12" y1="12" x2="4" y2="18" />
-        <line x1="12" y1="12" x2="20" y2="18" />
-      </svg>
-    ),
-  },
-  {
-    path: '/practice',
-    label: 'Quizzes',
-    key: 'quizzes',
-    icon: (
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
-        <line x1="12" y1="17" x2="12.01" y2="17" />
-      </svg>
-    ),
-  },
-  {
-    path: '/syllabuses',
-    label: 'My Syllabuses',
-    key: 'syllabuses',
-    icon: (
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
-        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
-      </svg>
-    ),
-  },
+  { path: '/dashboard', label: 'Dashboard', key: 'dashboard' },
+  { path: '/concept-graph', label: 'Learn', key: 'mindmap' },
+  { path: '/syllabuses', label: 'My Syllabuses', key: 'syllabuses' },
 ]
 
 export default function AppLayout({ children }) {
@@ -115,7 +64,6 @@ export default function AppLayout({ children }) {
               to={item.path}
               className={`al-nav-item ${isNavActive(item) ? 'al-active' : ''}`}
             >
-              <span className="al-nav-icon">{item.icon}</span>
               <span className="al-nav-label">{item.label}</span>
             </Link>
           ))}
@@ -124,12 +72,6 @@ export default function AppLayout({ children }) {
             to="/profile"
             className={`al-nav-item ${location.pathname === '/profile' ? 'al-active' : ''}`}
           >
-            <span className="al-nav-icon">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-            </span>
             <span className="al-nav-label">Profile</span>
           </Link>
 
@@ -137,13 +79,6 @@ export default function AppLayout({ children }) {
             to="/about"
             className={`al-nav-item ${location.pathname === '/about' ? 'al-active' : ''}`}
           >
-            <span className="al-nav-icon">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-            </span>
             <span className="al-nav-label">About</span>
           </Link>
         </nav>

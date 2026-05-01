@@ -1,12 +1,12 @@
 /**
  * Workflow Orchestration Service
  *
- * FULLY OLLAMA-POWERED PIPELINE
- * Every step calls Ollama — zero rule-based fallbacks in the happy path.
+ * GEMINI AI-POWERED PIPELINE
+ * Every step calls Gemini — zero rule-based fallbacks in the happy path.
  *
  * Flow:
- * Upload → Extract Text → [Ollama] Topics → [Ollama] Dependencies → Graph → Save
- * Quiz:    [Ollama] Questions → Student Answers → [Ollama] Evaluate → [Ollama] Weakness → Save
+ * Upload → Extract Text → [Gemini] Topics → [Gemini] Dependencies → Graph → Save
+ * Quiz:    [Gemini] Questions → Student Answers → [Gemini] Evaluate → [Gemini] Weakness → Save
  */
 
 const textExtractionService   = require('./textExtractionService');
@@ -32,12 +32,12 @@ const processingWorkflow = {
     return { success: true, text, stats: { length: text.length, words: text.split(/\s+/).length } };
   },
 
-  /** Step 2 — Ollama extracts topics + subtopics from the raw text */
+  /** Step 2 — Gemini extracts topics + subtopics from the raw text */
   extractTopics: async (text) => {
-    console.log('\n🤖 STEP 2: Extracting topics with Ollama...');
+    console.log('\n✨ STEP 2: Extracting topics with Gemini...');
     const topicData = await topicExtractionService.identifyTopicsAndSubtopics(text);
     const topics = topicData.mainTopics || [];
-    if (topics.length === 0) throw new Error('Ollama returned no topics');
+    if (topics.length === 0) throw new Error('Gemini returned no topics');
     console.log(`✅ Extracted ${topics.length} topics: ${topics.slice(0, 3).join(', ')}...`);
     return {
       success: true,
@@ -51,9 +51,9 @@ const processingWorkflow = {
     };
   },
 
-  /** Step 3 — Ollama maps prerequisite dependencies across topics */
+  /** Step 3 — Gemini maps prerequisite dependencies across topics */
   analyzeDependencies: async (topics, docText = '') => {
-    console.log('\n🔗 STEP 3: Analysing dependencies with Ollama...');
+    console.log('\n🔗 STEP 3: Analysing dependencies with Gemini...');
     const result = await dependencyAnalysisService.analyzeDependencies(topics, docText);
     const relationships = result.relationships || [];
     console.log(`✅ Found ${relationships.length} dependency relationships`);
@@ -110,15 +110,15 @@ const processingWorkflow = {
 
   /** Complete document processing pipeline (Steps 1–4 + save) */
   processDocument: async (filePath, mimeType, userId) => {
-    console.log('\n🚀 Starting FULL OLLAMA Document Processing Pipeline...\n');
+    console.log('\n🚀 Starting FULL GEMINI Document Processing Pipeline...\n');
 
     // 1. Extract text
     const extractResult = await processingWorkflow.extractText(filePath, mimeType);
 
-    // 2. Ollama: topics
+    // 2. Gemini: topics
     const topicsResult = await processingWorkflow.extractTopics(extractResult.text);
 
-    // 3. Ollama: dependencies (pass full text for context)
+    // 3. Gemini: dependencies (pass full text for context)
     const depsResult = await processingWorkflow.analyzeDependencies(
       topicsResult.topicsData.length > 0 ? topicsResult.topicsData : topicsResult.topics,
       extractResult.text
@@ -184,26 +184,26 @@ const processingWorkflow = {
 ══════════════════════════════════════════════════════════════════════════════ */
 const quizWorkflow = {
 
-  /** Ollama generates document-grounded questions */
+  /** Gemini generates document-grounded questions */
   generateQuestions: async (topicsData, docText = '') => {
-    console.log('\n🤖 QUIZ STEP 1: Generating questions with Ollama...');
+    console.log('\n✨ QUIZ STEP 1: Generating questions with Gemini...');
     const result = await questionGenerationService.generateQuestions(topicsData, docText);
     const questions = result.questions || [];
-    console.log(`✅ Generated ${questions.length} Ollama questions`);
+    console.log(`✅ Generated ${questions.length} Gemini questions`);
     return { success: true, questions, stats: { count: questions.length } };
   },
 
-  /** Ollama evaluates the student's answer */
+  /** Gemini evaluates the student's answer */
   evaluateAnswer: async (question, userAnswer, topic) => {
-    console.log('\n🤖 QUIZ STEP 2: Evaluating answer with Ollama...');
+    console.log('\n✨ QUIZ STEP 2: Evaluating answer with Gemini...');
     const evaluation = await answerEvaluationService.evaluateAnswer(userAnswer, question, topic);
     console.log(`✅ Evaluation: ${evaluation.rating} (score: ${evaluation.score ?? '?'})`);
     return { success: true, evaluation };
   },
 
-  /** Ollama performs root-cause weakness analysis */
+  /** Gemini performs root-cause weakness analysis */
   analyzeWeaknesses: async (evaluation, allTopics = []) => {
-    console.log('\n🤖 QUIZ STEP 3: Analysing weaknesses with Ollama...');
+    console.log('\n✨ QUIZ STEP 3: Analysing weaknesses with Gemini...');
     if (evaluation.rating !== 'weak' && evaluation.rating !== 'partial') {
       return { success: true, analysis: { category: 'strong', recommendation: 'Keep it up!' } };
     }
@@ -226,7 +226,7 @@ const quizWorkflow = {
   },
 
   processQuizAnswer: async (userId, quizData) => {
-    console.log('\n🚀 Starting FULL OLLAMA Quiz Processing Pipeline...\n');
+    console.log('\n🚀 Starting FULL GEMINI Quiz Processing Pipeline...\n');
 
     const evalResult = await quizWorkflow.evaluateAnswer(
       quizData.question,

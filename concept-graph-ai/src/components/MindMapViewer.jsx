@@ -62,6 +62,7 @@ const MindMapViewer = ({ topics = [], subject = '', evaluationData = {}, onTopic
           courseTitle={subject || 'Concept Map'}
           onSelectTopic={name => onTopicClick?.(name)}
           onSelectSubtopic={(name, parent) => onTopicClick?.(name, parent)}
+          onCardClick={(name) => onTopicClick?.(name)}
         />
       )}
 

@@ -1,6 +1,6 @@
 /**
- * Topic Extraction Service — 100% Ollama-powered
- * Replaces old keyword-counting logic with full AI analysis.
+ * Topic Extraction Service — Gemini AI-powered
+ * Uses Google Gemini for full hierarchical topic analysis.
  */
 
 const ollamaService = require('./ollamaService');
@@ -10,19 +10,19 @@ const ollamaService = require('./ollamaService');
  * Returns { mainTopics: string[], topicsData: object[], subject, summary, keyTerms, relationships }
  */
 const identifyTopicsAndSubtopics = async (text) => {
-  console.log('🤖 [Ollama] Extracting topics from document...');
+  console.log('✨ [Gemini] Extracting topics from document...');
 
   const result = await ollamaService.extractTopicsAdvanced(text);
 
   if (!result || !Array.isArray(result.topics) || result.topics.length === 0) {
-    console.warn('⚠️  Ollama returned no topics — falling back to basic extraction');
+    console.warn('⚠️  Gemini returned no topics — falling back to basic extraction');
     return fallbackExtraction(text);
   }
 
   // Build flat list of topic name strings (used by graph / dependency layers)
   const mainTopics = result.topics.map(t => t.name).filter(Boolean);
 
-  console.log(`✅ [Ollama] Extracted ${mainTopics.length} topics for: "${result.subject || 'Unknown Subject'}"`);
+  console.log(`✅ [Gemini] Extracted ${mainTopics.length} topics for: "${result.subject || 'Unknown Subject'}"`);
 
   return {
     mainTopics,
@@ -35,7 +35,7 @@ const identifyTopicsAndSubtopics = async (text) => {
 };
 
 /**
- * Simple fallback — used only when Ollama is unreachable.
+ * Simple fallback — used only when Gemini is unreachable.
  */
 const fallbackExtraction = (text) => {
   const stopWords = new Set([

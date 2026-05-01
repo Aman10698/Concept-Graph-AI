@@ -16,6 +16,7 @@ const ollamaRoutes     = require('./routes/ollamaRoutes');
 const progressRoutes   = require('./routes/progressRoutes');
 const sessionRoutes      = require('./routes/sessionRoutes');
 const learningPathRoutes = require('./routes/learningPathRoutes');
+const bloomRoutes        = require('./routes/bloomRoutes');
 const { errorHandlingMiddleware } = require('./utils/middleware');
 const { connectDB } = require('./services/mongoService');
 
@@ -42,6 +43,7 @@ app.use('/api', ollamaRoutes);
 app.use('/api', progressRoutes);
 app.use('/api', sessionRoutes);
 app.use('/api', learningPathRoutes);
+app.use('/api', bloomRoutes);
 // ── Health check ──────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'Server is running', timestamp: new Date().toISOString() });

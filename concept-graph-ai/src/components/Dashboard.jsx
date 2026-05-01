@@ -58,21 +58,22 @@ export default function Dashboard() {
 
   useEffect(() => {
     const load = () => {
-      const activeSessionId = localStorage.getItem('activeSessionId')
-      if (!activeSessionId) {
-        setTopicsData(null); setEvalData({}); setQuestionsData(null); return
-      }
       try {
         const t = localStorage.getItem('learningTopicsData')
         const e = localStorage.getItem('learningEvaluationData')
         const q = localStorage.getItem('learningQuestionsData')
+        // Only clear if there's no active session AND no topics data at all
+        const hasSession = !!localStorage.getItem('activeSessionId')
+        if (!hasSession && !t) {
+          setTopicsData(null); setEvalData({}); setQuestionsData(null); return
+        }
         setTopicsData(t ? JSON.parse(t) : null)
         setEvalData(e ? JSON.parse(e) : {})
         setQuestionsData(q ? JSON.parse(q) : null)
       } catch { /* ignore */ }
     }
     load()
-    // Re-load when storage changes (e.g. after a quiz in another tab or component)
+    // Re-load when storage changes (e.g. after a quiz completes)
     window.addEventListener('storage', load)
     return () => window.removeEventListener('storage', load)
   }, [location.pathname])
@@ -131,179 +132,53 @@ export default function Dashboard() {
       </div>
 
       {/* ── Stat Cards ── */}
-      <div style={{ display:'flex', gap:16, flexWrap:'wrap' }}>
-        <StatCard label="Topics Covered" value={`${answered}/${totalTopics}`}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:16 }}>
+        <StatCard label="Topics Practiced" value={`${answered}/${totalTopics}`}
           pct={totalTopics > 0 ? Math.round(answered/totalTopics*100) : 0}
-          sub1={`${totalTopics > 0 ? Math.round(answered/totalTopics*100) : 0}% complete`}
-          sub2={answered < totalTopics ? "Keep going! You're building a strong base." : "All topics covered!"} />
+          sub1={`${totalTopics > 0 ? Math.round(answered/totalTopics*100) : 0}% attempted`}
+          sub2={answered === 0 ? 'Click any node to start a quiz!' : answered < totalTopics ? "Keep going! You're building a strong base." : 'All topics attempted!'} />
         <StatCard label="Questions Practiced" value={answeredQ}
-          sub1={totalQ > 0 ? `${answeredQ} of ${totalQ} questions answered` : 'No questions yet'}
+          sub1={totalQ > 0 ? `${answeredQ} of ${totalQ} questions answered` : answeredQ > 0 ? `${answeredQ} questions answered` : 'No questions yet'}
           sub2={answeredQ > 0 ? 'Keep it up!' : 'Start practising!'} sub2Color="#22c55e" />
-        <StatCard label="Accuracy" value={answered > 0 ? `${accuracy}%` : '—'}
-          sub1={`${strong}/${answered} correct answers`}
-          sub2={accuracy >= 70 ? 'Good performance!' : accuracy > 0 ? 'Needs improvement' : 'No quizzes yet'}
-          sub2Color={accuracy >= 70 ? '#22c55e' : '#ef4444'} />
+        <StatCard label="Accuracy"
+          value={answered > 0 ? `${accuracy}%` : answeredQ > 0 ? 'Pending' : '—'}
+          sub1={answered > 0 ? `${strong}/${answered} topics rated` : answeredQ > 0 ? 'Awaiting quiz evaluation' : 'No quizzes completed yet'}
+          sub2={accuracy >= 70 ? 'Good performance!' : accuracy > 0 ? 'Needs improvement' : answeredQ > 0 ? 'Complete a quiz to see accuracy' : 'Take a quiz to begin!'}
+          sub2Color={accuracy >= 70 ? '#22c55e' : accuracy > 0 ? '#f59e0b' : '#9ca3af'} />
         <StatCard label="Overall Mastery" value={`${mastery}%`} pct={mastery}
           sub1={`${strong}/${totalTopics} topics mastered`} />
       </div>
 
-      {/* ── Middle Row ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 280px', gap:16, alignItems:'start' }}>
-
-        {/* Concept Mastery Overview */}
-        <div className="t-card" style={{ padding:'20px' }}>
-          <h2 style={{ fontSize:'0.98rem', fontWeight:700, color:'#0f172a', marginBottom:16 }}>Concept Mastery Overview</h2>
-          <div style={{ display:'flex', alignItems:'center', gap:20 }}>
-            <div style={{ position:'relative', flexShrink:0 }}>
-              <DonutChart strong={strong} partial={partial} weak={weak} notPractised={Math.max(notPractised,0)} total={totalTopics || 4} />
-              <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
-                <span style={{ fontSize:'1.5rem', fontWeight:800, color:'#0f172a' }}>{totalTopics}</span>
-                <span style={{ fontSize:'0.65rem', color:'#9ca3af', fontWeight:600 }}>Total Topics</span>
-              </div>
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:8, flex:1 }}>
-              {[
-                { label:'Strong',        count:strong,                  color:'#22c55e' },
-                { label:'Partial',       count:partial,                 color:'#f59e0b' },
-                { label:'Needs Work',    count:weak,                    color:'#ef4444' },
-                { label:'Not Practised', count:Math.max(notPractised,0),color:'#9ca3af' },
-              ].map(s => (
-                <div key={s.label} style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                    <div style={{ width:10, height:10, borderRadius:'50%', background:s.color }} />
-                    <span style={{ fontSize:'0.8rem', color:'#374151' }}>{s.label}</span>
+      {/* ── Bottom Row: Recent Activity full width ── */}
+      <div className="t-card" style={{ padding:'18px' }}>
+        <h3 style={{ fontSize:'0.88rem', fontWeight:700, color:'#0f172a', marginBottom:12 }}>Recent Activity</h3>
+        {Object.entries(evalData).length === 0 ? (
+          <p style={{ fontSize:'0.78rem', color:'#9ca3af', textAlign:'center', padding:'12px 0' }}>No activity yet. Click a mind map node to start!</p>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {Object.entries(evalData).slice(0,5).map(([name, ev]) => {
+              const score = ev.score ?? ev.confidence ?? 0
+              const color = score >= 70 ? '#22c55e' : score >= 40 ? '#f59e0b' : '#ef4444'
+              return (
+                <div key={name} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 10px', borderRadius:8, background:'#f8fafc' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <div style={{ width:8, height:8, borderRadius:'50%', background:color, flexShrink:0 }} />
+                    <div>
+                      <p style={{ fontSize:'0.75rem', fontWeight:600, color:'#0f172a' }}>{name}</p>
+                      <p style={{ fontSize:'0.65rem', color:'#9ca3af' }}>{ev.rating ? ev.rating.charAt(0).toUpperCase() + ev.rating.slice(1) : 'Quiz'}</p>
+                    </div>
                   </div>
-                  <span style={{ fontSize:'0.8rem', fontWeight:700, color:'#6b7280' }}>
-                    {s.count} ({totalTopics > 0 ? Math.round(s.count/totalTopics*100) : 0}%)
-                  </span>
+                  <span style={{ fontSize:'0.78rem', fontWeight:800, color }}>{score}%</span>
                 </div>
-              ))}
-            </div>
+              )
+            })}
           </div>
-          <Link to="/practice" style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, marginTop:16, padding:'9px', borderRadius:10, border:'1.5px solid #e2e8f0', color:'#6366f1', fontWeight:700, fontSize:'0.82rem', textDecoration:'none', background:'#fafbff' }}>
-            View All Topics
-          </Link>
-        </div>
+        )}
+        <Link to="/practice" style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4, marginTop:10, fontSize:'0.75rem', color:'#6366f1', fontWeight:700, textDecoration:'none' }}>
+          View All Activity
+        </Link>
+      </div>  {/* end Recent Activity */}
 
-        {/* Weak Areas */}
-        <div className="t-card" style={{ padding:'20px' }}>
-          <h2 style={{ fontSize:'0.98rem', fontWeight:700, color:'#0f172a', marginBottom:4 }}>
-            Weak Areas <span style={{ color:'#ef4444', fontWeight:600, fontSize:'0.85rem' }}>(Needs Your Focus)</span>
-          </h2>
-          {weakAreas.length === 0 ? (
-            <div style={{ padding:'24px 0', textAlign:'center' }}>
-              <p style={{ fontWeight:700, color:'#15803d', fontSize:'0.88rem' }}>All topics strong!</p>
-              <p style={{ fontSize:'0.78rem', color:'#6b7280' }}>Keep practising to maintain mastery.</p>
-            </div>
-          ) : (
-            <div style={{ display:'flex', flexDirection:'column', gap:10, marginTop:12 }}>
-              {weakAreas.slice(0,3).map(name => {
-                const r = evalData[name]?.rating
-                const conf = evalData[name]?.confidence ?? 0
-                const correct = Math.round(conf / 100 * (evalData[name]?.totalQuestions || 3))
-                const total3  = evalData[name]?.totalQuestions || 3
-                const isWeak  = r === 'weak'
-                return (
-                  <div key={name} style={{ padding:'12px 14px', borderRadius:10, border:`1.5px solid ${isWeak ? '#fca5a5' : '#fcd34d'}`, background:isWeak ? '#fff1f2' : '#fffbeb' }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
-                      <div>
-                        <span style={{ fontWeight:700, fontSize:'0.88rem', color:'#0f172a' }}>{name} </span>
-                        <span style={{ fontSize:'0.72rem', fontWeight:700, color: isWeak ? '#ef4444' : '#f59e0b', padding:'1px 6px', borderRadius:999, background: isWeak ? '#fee2e2' : '#fef9c3' }}>
-                          {isWeak ? 'Weak' : 'Partial'}
-                        </span>
-                      </div>
-                      <button onClick={() => navigate('/practice')} style={{ padding:'4px 12px', borderRadius:8, border:'1.5px solid #6366f1', background:'#fff', color:'#6366f1', fontSize:'0.75rem', fontWeight:700, cursor:'pointer' }}>
-                        Review Now
-                      </button>
-                    </div>
-                    <p style={{ fontSize:'0.72rem', color:'#6b7280' }}>
-                      Impact: {isWeak ? 'High' : 'Medium'} • {correct}/{total3} correct
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-          <button onClick={() => navigate('/practice')} style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, marginTop:14, padding:'9px', borderRadius:10, border:'1.5px solid #e2e8f0', color:'#6366f1', fontWeight:700, fontSize:'0.82rem', width:'100%', background:'#fafbff', cursor:'pointer' }}>
-            View All Weak Areas
-          </button>
-        </div>
-
-        {/* Right Column */}
-        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-
-          {/* Recommended Next Step */}
-          <div className="t-card" style={{ padding:'18px' }}>
-            <p style={{ fontWeight:700, fontSize:'0.9rem', color:'#0f172a', marginBottom:12 }}>Recommended Next Step</p>
-            {focusTopic ? (
-              <>
-                <div style={{ padding:'10px 12px', borderRadius:10, background:'#fffbeb', border:'1.5px solid #fcd34d', marginBottom:12 }}>
-                  <p style={{ fontSize:'0.78rem', color:'#92400e', marginBottom:4 }}>
-                    Focus on: <strong style={{ color:'#b45309' }}>{focusTopic}</strong>
-                  </p>
-                  <p style={{ fontSize:'0.72rem', color:'#92400e' }}>
-                    You missed key ideas in {focusTopic.toLowerCase()} and its concepts.
-                  </p>
-                </div>
-                <p style={{ fontSize:'0.72rem', fontWeight:700, color:'#6b7280', marginBottom:6 }}>Why this first?</p>
-                <p style={{ fontSize:'0.72rem', color:'#6b7280', marginBottom:12, lineHeight:1.5 }}>
-                  {focusTopic} is a prerequisite for understanding related advanced topics.
-                </p>
-                <p style={{ fontSize:'0.72rem', fontWeight:700, color:'#6b7280', marginBottom:8 }}>Action Plan</p>
-                <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:14 }}>
-                  {['Review topic concepts','Practice 3 Questions','Take a Quick Quiz'].map((a,i) => (
-                    <div key={i} style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <div style={{ width:6, height:6, borderRadius:'50%', background:'#6366f1', flexShrink:0 }} />
-                      <span style={{ fontSize:'0.75rem', color:'#374151' }}>{a}</span>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={() => navigate('/practice')} style={{ width:'100%', padding:'10px', borderRadius:10, background:'linear-gradient(135deg,#6366f1,#4f46e5)', color:'#fff', fontWeight:700, fontSize:'0.82rem', border:'none', cursor:'pointer', boxShadow:'0 2px 8px rgba(99,102,241,0.3)' }}>
-                  Start Learning Path
-                </button>
-              </>
-            ) : (
-              <div style={{ textAlign:'center', padding:'12px 0' }}>
-                <p style={{ fontSize:'0.82rem', fontWeight:700, color:'#15803d' }}>All strong!</p>
-                <p style={{ fontSize:'0.75rem', color:'#6b7280', marginTop:4 }}>Try harder questions to challenge yourself.</p>
-                <button onClick={() => navigate('/practice')} style={{ marginTop:12, padding:'8px 16px', borderRadius:8, background:'linear-gradient(135deg,#6366f1,#4f46e5)', color:'#fff', fontWeight:700, fontSize:'0.8rem', border:'none', cursor:'pointer' }}>
-                  Practice Now
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Recent Activity */}
-          <div className="t-card" style={{ padding:'18px' }}>
-            <h3 style={{ fontSize:'0.88rem', fontWeight:700, color:'#0f172a', marginBottom:12 }}>Recent Activity</h3>
-            {Object.entries(evalData).length === 0 ? (
-              <p style={{ fontSize:'0.78rem', color:'#9ca3af', textAlign:'center', padding:'12px 0' }}>No activity yet. Start a quiz!</p>
-            ) : (
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                {Object.entries(evalData).slice(0,3).map(([name, ev]) => {
-                  const conf = ev.confidence ?? 0
-                  const color = conf >= 70 ? '#22c55e' : conf >= 40 ? '#f59e0b' : '#ef4444'
-                  return (
-                    <div key={name} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 10px', borderRadius:8, background:'#f8fafc' }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                        <div style={{ width:8, height:8, borderRadius:'50%', background:color, flexShrink:0 }} />
-                        <div>
-                          <p style={{ fontSize:'0.75rem', fontWeight:600, color:'#0f172a' }}>{name}</p>
-                          <p style={{ fontSize:'0.65rem', color:'#9ca3af' }}>Quiz</p>
-                        </div>
-                      </div>
-                      <span style={{ fontSize:'0.78rem', fontWeight:800, color }}>{conf}%</span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-            <Link to="/practice" style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4, marginTop:10, fontSize:'0.75rem', color:'#6366f1', fontWeight:700, textDecoration:'none' }}>
-              View All Activity
-            </Link>
-          </div>
-        </div>
-      </div>
 
       {/* ── Concept Map Preview ── */}
       <div className="t-card" style={{ padding:'20px' }}>

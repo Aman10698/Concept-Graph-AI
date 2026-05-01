@@ -3,8 +3,8 @@ const ollamaService = require('../services/ollamaService');
 
 /**
  * POST /api/topics
- * Full Ollama-powered topic extraction with rich hierarchical structure.
- * Falls back to rule-based only if Ollama is completely unavailable.
+ * Gemini-powered topic extraction with rich hierarchical structure.
+ * Falls back to rule-based only if Gemini throws.
  */
 const extractTopics = async (req, res) => {
   try {
@@ -19,46 +19,59 @@ const extractTopics = async (req, res) => {
 
     let result = null;
 
-    // ── Try Ollama (primary) ────────────────────────────────────
+    // ── Try Gemini (primary) ────────────────────────────────────
     try {
-      const isRunning = await ollamaService.testOllamaConnection();
-      if (isRunning) {
-        console.log('🦙 Using Ollama (llama3.1) for deep topic extraction...');
-        const ollamaResult = await ollamaService.extractTopicsAdvanced(text);
+      console.log('✨ Using Gemini for deep topic extraction...');
+      const geminiResult = await ollamaService.extractTopicsAdvanced(text);
 
-        if (ollamaResult?.topics?.length > 0) {
-          // Ollama now returns rich objects: { name, description, subtopics[] }
-          const topics = ollamaResult.topics.map(t => ({
-            name:        typeof t === 'string' ? t : (t.name || 'Unknown'),
-            description: t.description || '',
-            subtopics:   Array.isArray(t.subtopics)
-              ? t.subtopics.map(s => (typeof s === 'string' ? s : (s.name || s)))
-              : [],
-          }));
+      if (geminiResult?.topics?.length > 0) {
+        const topics = geminiResult.topics.map(t => ({
+          name:        typeof t === 'string' ? t : (t.name || 'Unknown'),
+          description: t.description || '',
+          subtopics:   Array.isArray(t.subtopics)
+            ? t.subtopics.map(s => (typeof s === 'string' ? s : (s.name || s)))
+            : [],
+        }));
 
-          result = {
-            topics,
-            subject:       ollamaResult.subject       || topics[0]?.name || 'Concept Map',
-            summary:       ollamaResult.summary       || '',
-            relationships: ollamaResult.relationships || [],
-            keyTerms:      ollamaResult.keyTerms      || [],
-            allKeywords:   topics.map(t => t.name),
-            confidence:    0.96,
-            source:        'ollama',
-          };
-          console.log(`✅ Ollama extracted ${topics.length} topics`);
-        }
+        result = {
+          topics,
+          subject:       geminiResult.subject       || topics[0]?.name || 'Concept Map',
+          summary:       geminiResult.summary       || '',
+          relationships: geminiResult.relationships || [],
+          keyTerms:      geminiResult.keyTerms      || [],
+          allKeywords:   topics.map(t => t.name),
+          confidence:    0.96,
+          source:        'gemini',
+        };
+        console.log(`✅ Gemini extracted ${topics.length} topics`);
       }
-    } catch (ollamaErr) {
-      console.warn('⚠️  Ollama unavailable, falling back to rule-based:', ollamaErr.message);
+    } catch (geminiErr) {
+      console.warn('⚠️  Gemini unavailable, falling back to rule-based:', geminiErr.message);
     }
 
-    // ── Fallback: rule-based ────────────────────────────────────
+    // ── Fallback: rule-based ─────────────────────────────────────
     if (!result) {
       console.log('📊 Using rule-based topic extraction...');
-      result = topicExtractionService.identifyTopicsAndSubtopics(text);
-      result.source = 'rule-based';
-      console.log(`✅ Rule-based extracted ${result.topics.length} topics`);
+      // identifyTopicsAndSubtopics is async — must await it
+      const fallback = await topicExtractionService.identifyTopicsAndSubtopics(text);
+
+      // The service returns { mainTopics, topicsData, subject, summary, keyTerms, relationships }
+      // Normalise to the shape callers expect (topics array of objects)
+      const topics = (fallback.topicsData || []).length > 0
+        ? fallback.topicsData
+        : (fallback.mainTopics || []).map(name => ({ name, description: '', subtopics: [] }));
+
+      result = {
+        topics,
+        subject:       fallback.subject    || topics[0]?.name || 'Concept Map',
+        summary:       fallback.summary    || '',
+        relationships: fallback.relationships || [],
+        keyTerms:      fallback.keyTerms   || [],
+        allKeywords:   (fallback.mainTopics || topics.map(t => t.name)),
+        confidence:    0.6,
+        source:        'rule-based',
+      };
+      console.log(`✅ Rule-based extracted ${topics.length} topics`);
     }
 
     res.status(200).json({
