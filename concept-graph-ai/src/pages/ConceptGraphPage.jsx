@@ -678,13 +678,22 @@ const ConceptGraphPage = () => {
             evaluationData={evaluationData}
             onTopicClick={(name, parent) => {
               // Find parent topic name if the clicked node is a subtopic
-              const parentName = parent ||
-                topicsData.topics.find(t =>
-                  (t.subtopics || []).some(s =>
-                    (typeof s === 'string' ? s : s.name) === name
-                  )
-                )?.name || null;
-              setBloomTopic({ name, parent: parentName });
+              const parentTopicObj = topicsData.topics.find(t =>
+                (t.subtopics || []).some(s =>
+                  (typeof s === 'string' ? s : s.name) === name
+                )
+              );
+              const parentName = parent || parentTopicObj?.name || null;
+
+              // Resolve subtopics if this is a topic-level node (not a subtopic)
+              const selfTopicObj = topicsData.topics.find(t =>
+                (typeof t === 'string' ? t : t.name) === name
+              );
+              const subs = selfTopicObj?.subtopics
+                ? selfTopicObj.subtopics.map(s => typeof s === 'string' ? s : s.name).filter(Boolean)
+                : [];
+
+              setBloomTopic({ name, parent: parentName, subtopics: subs });
             }}
           />
         )}
@@ -1249,6 +1258,7 @@ const ConceptGraphPage = () => {
         <BloomPanel
           concept={bloomTopic.name}
           parentTopic={bloomTopic.parent}
+          subtopics={bloomTopic.subtopics || []}
           onQuizComplete={({ concept, score, rating, nodes = [], improvements = [] }) => {
             // 1. Recolour the mind map node
             handleEvalUpdate({ [concept]: { score, rating } });

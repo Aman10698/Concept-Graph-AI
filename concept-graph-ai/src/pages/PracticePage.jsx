@@ -32,7 +32,7 @@ export default function PracticePage() {
   const [dependencyData, setDependencyData] = useState(null)
   const [evalData,       setEvalData]       = useState({})
   const [selectedTopic,  setSelectedTopic]  = useState(null)
-  const [bloomNode,      setBloomNode]      = useState(null)  // { name, parentName }
+  const [bloomNode,      setBloomNode]      = useState(null)  // { name, parentName, subtopics }
   const [generatingFor,  setGeneratingFor]  = useState(null)
   const [sessionText,    setSessionText]    = useState('')
   const [sessionTitle,   setSessionTitle]   = useState('My Course')
@@ -346,6 +346,7 @@ export default function PracticePage() {
               <BloomPanel
                 concept={bloomNode.name}
                 parentTopic={bloomNode.parentName}
+                subtopics={bloomNode.subtopics || []}
                 onQuizComplete={({ concept, score, rating, nodes = [], improvements = [] }) => {
                   // Update evalData so the mind map node recolours immediately
                   setEvalData(prev => {
@@ -373,7 +374,14 @@ export default function PracticePage() {
                 courseTitle={sessionTitle}
                 onSelectTopic={setSelectedTopic}
                 onSelectSubtopic={(subtopicName) => setSelectedTopic(subtopicName)}
-                onCardClick={(name, parentName) => setBloomNode({ name, parentName })}
+                onCardClick={(name, parentName) => {
+                  // Resolve subtopics if this is a topic-level node
+                  const topicObj = topics.find(t => getName(t) === name)
+                  const subs = topicObj?.subtopics
+                    ? topicObj.subtopics.map(s => typeof s === 'string' ? s : s.name).filter(Boolean)
+                    : []
+                  setBloomNode({ name, parentName, subtopics: subs })
+                }}
               />
             </div>
           )}

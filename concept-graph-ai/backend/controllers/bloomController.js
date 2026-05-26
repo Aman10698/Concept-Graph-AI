@@ -66,16 +66,37 @@ exports.getAllProgress = async (req, res) => {
 ═══════════════════════════════════════════════════════════════════ */
 exports.getQuestions = async (req, res) => {
   try {
-    const { userId, concept, bloomLevel, parentTopic, quizType = 'subjective', n = 3 } = req.body;
+    const { userId, concept, bloomLevel, parentTopic, quizType = 'subjective', n = 3, subtopics } = req.body;
     if (!userId || !concept || !bloomLevel)
       return res.status(400).json({ error: 'userId, concept, bloomLevel required' });
 
     if (!BLOOM_ORDER.includes(bloomLevel))
       return res.status(400).json({ error: `Invalid bloomLevel. Must be one of: ${BLOOM_ORDER.join(', ')}` });
 
+    const totalN = Number(n);
+
+    // ── Module node: subtopics present → distribute questions across all sub-topics ──
+    if (Array.isArray(subtopics) && subtopics.length > 0) {
+      const perSub = Math.max(1, Math.round(totalN / subtopics.length));
+
+      // Generate questions for each subtopic in parallel, then merge
+      const allResults = await Promise.all(
+        subtopics.map(async (sub) => {
+          const subName = typeof sub === 'string' ? sub : (sub.name || String(sub));
+          const fn = quizType === 'objective' ? generateMCQQuestions : generateBloomQuestions;
+          const qs = await fn(subName, bloomLevel, concept /* parent context */, perSub);
+          return qs;
+        })
+      );
+
+      const questions = allResults.flat();
+      return res.json({ success: true, questions, bloomLevel, concept, quizType });
+    }
+
+    // ── Leaf node: no subtopics → generate for the concept itself ──
     const questions = quizType === 'objective'
-      ? await generateMCQQuestions(concept, bloomLevel, parentTopic || '', Number(n))
-      : await generateBloomQuestions(concept, bloomLevel, parentTopic || '', Number(n));
+      ? await generateMCQQuestions(concept, bloomLevel, parentTopic || '', totalN)
+      : await generateBloomQuestions(concept, bloomLevel, parentTopic || '', totalN);
 
     res.json({ success: true, questions, bloomLevel, concept, quizType });
   } catch (err) {

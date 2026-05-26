@@ -53,7 +53,25 @@ const Spinner = ({ label = 'Loading…', size = 28, color = '#6366f1' }) => (
 const scoreToRating = (score) =>
   score >= 70 ? 'strong' : score >= 40 ? 'partial' : 'weak';
 
-export default function BloomPanel({ concept, parentTopic, onClose, inline = false, onQuizComplete }) {
+/* ─── Dynamic question count based on topic complexity ─────────────────
+   Short topic (≤ 2 words or ≤ 15 chars) → 2 questions
+   Medium topic (3-5 words or ≤ 35 chars) → 4 questions
+   Long / complex topic (module with subtopics, or long name) → 6 questions
+─────────────────────────────────────────────────────────────────────── */
+function computeQuestionCount(concept, subtopics = []) {
+  // If it's a module node (has subtopics), scale with sub-topic count
+  if (subtopics.length > 0) {
+    // 2 questions per subtopic, min 4, max 12
+    return Math.min(12, Math.max(4, subtopics.length * 2));
+  }
+  const words = concept.trim().split(/\s+/).length;
+  const chars = concept.trim().length;
+  if (words <= 2 && chars <= 15) return 2;
+  if (words <= 5 && chars <= 35) return 4;
+  return 6;
+}
+
+export default function BloomPanel({ concept, parentTopic, subtopics = [], onClose, inline = false, onQuizComplete }) {
   const { user } = useAuth();
   const userId   = user?.uid || user?.id || 'guest';
 
@@ -98,11 +116,23 @@ export default function BloomPanel({ concept, parentTopic, onClose, inline = fal
     setTab('quiz');
     setQuestions([]); setAnswers({}); setResults({}); setMcqPicked({}); setQError(null);
     setLoading(true);
+    // Compute dynamic question count based on topic length / subtopic breadth
+    const n = computeQuestionCount(concept, subtopics);
     try {
       const r = await fetch(`${API}/api/bloom/questions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, concept, bloomLevel: level, parentTopic, quizType: type, n: 3 }),
+        body: JSON.stringify({
+          userId,
+          concept,
+          bloomLevel: level,
+          parentTopic,
+          quizType: type,
+          n,
+          // If this is a module/topic node, pass its subtopics so the backend
+          // can generate questions covering all sub-topics breadth
+          subtopics: subtopics.length > 0 ? subtopics : undefined,
+        }),
       });
       const j = await r.json();
       if (j.success && j.questions?.length) {

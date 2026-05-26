@@ -372,28 +372,70 @@ const generateDependencyAnalysis = async (concept, bloomLevel, parentTopic, quiz
     `Q${i + 1}: "${r.question}" - ${r.correct !== undefined ? (r.correct ? 'Correct' : 'Wrong') : `Score: ${r.score}%`}`
   ).join('\n');
 
+  // Extract the per-question statuses so we can build nodes directly from the questions
+  const questionNodes = quizResults.map((r, i) => {
+    const qStatus = r.correct !== undefined
+      ? (r.correct ? 'strong' : 'weak')
+      : (r.score >= 70 ? 'strong' : r.score >= 40 ? 'partial' : 'weak');
+    return { question: r.question, status: qStatus, index: i + 1 };
+  });
+
+  // Ask the AI only to label the sub-topics that appear in the quiz questions
+  const questionList = questionNodes
+    .map(q => `Q${q.index}: "${q.question}"`)
+    .join('\n');
+
   const prompt = `You are an AI tutor. ${context}
 A student finished a "${bloomLevel}" Bloom level quiz on the topic "${concept}".
 Score: ${score}%.
-Quiz results:
-${resultsText}
 
-Create a PREREQUISITE DEPENDENCY TREE for this student.
-Output EXACTLY 6 nodes, one blank line between each node, using this format:
+These are the EXACT quiz questions that were asked:
+${questionList}
 
-NODE: [name]
-PARENT: [parent name or none]
-STATUS: [current | strong | partial | weak | not_started]
-REASON: [one sentence]
+Your task: For each question above, extract the KEY SUB-TOPIC it is testing (2-5 words).
+Then create a dependency tree where:
+- Root node is "${concept}" (PARENT: none, STATUS: current)
+- Each child node is a sub-topic extracted from ONE of the quiz questions above
+- Use ONLY sub-topics from the quiz questions listed above — do NOT invent new topics
+
+Output one node per quiz question PLUS the root, one blank line between each, using this EXACT format:
+
+NODE: [sub-topic name from the question]
+PARENT: [parent node name or none]
+STATUS: [strong | partial | weak]
+REASON: [one sentence referencing the quiz result]
+
+For STATUS, use the quiz result:
+${questionNodes.map(q => `Q${q.index} → ${q.status}`).join(', ')}
 
 First node must be "${concept}" with PARENT: none and STATUS: current.
-Set child STATUS based on quiz score (score<40 = weak, 40-70 = partial, >70 = strong).
 Each PARENT must match a previous NODE exactly.
-No extra text. Start now:`;
+No extra text. No topics that were not in the quiz questions. Start now:`;
+
+  // ── Helper: deterministic node builder from quiz questions ──────────────
+  const buildNodesFromQuestions = () => {
+    const root = { name: concept, parent: 'none', status: 'current',
+      reason: 'The concept being studied.' };
+    const children = questionNodes.map(q => {
+      // Use first 4-5 meaningful words of the question as sub-topic label
+      const words = q.question
+        .replace(/[?]/g, '')
+        .split(/\s+/)
+        .filter(w => !['what','is','the','a','an','of','how','why','does','do','are','can','in','on','to','for','with','that','this','which','when','where'].includes(w.toLowerCase()));
+      const label = words.slice(0, 4).join(' ') || `Topic ${q.index}`;
+      return {
+        name:   label,
+        parent: concept,
+        status: q.status,
+        reason: `Based on quiz question ${q.index}.`,
+      };
+    });
+    return [root, ...children];
+  };
 
   try {
-    const raw = await generateText(prompt, { temperature: 0.3, numPredict: 650 });
-    console.log('[bloomService] DepTree raw:\n' + raw.slice(0, 500));
+    const raw = await generateText(prompt, { temperature: 0.3, numPredict: 800 });
+    console.log('[bloomService] DepTree raw:\n' + raw.slice(0, 600));
 
     const nodes = [];
     const blocks = raw.split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
@@ -416,7 +458,7 @@ No extra text. Start now:`;
         status: valid.includes(status) ? status : 'not_started',
         reason,
       });
-      if (nodes.length >= 8) break;
+      if (nodes.length >= 10) break;
     }
 
     // Guarantee root
@@ -425,11 +467,22 @@ No extra text. Start now:`;
         reason: 'The concept being studied.' });
     }
 
+    // Fallback: if AI gave fewer child nodes than quiz questions, build deterministically
+    const childCount = nodes.filter(n => n.status !== 'current').length;
+    if (childCount < quizResults.length) {
+      console.warn('[bloomService] AI gave fewer nodes than questions — using deterministic fallback');
+      const fallback = buildNodesFromQuestions();
+      console.log('[bloomService] Fallback nodes:', fallback.length);
+      return { score, nodes: fallback };
+    }
+
     console.log('[bloomService] DepTree nodes:', nodes.length);
     return { score, nodes };
   } catch (err) {
     console.error('generateDependencyAnalysis error:', err.message);
-    return { score, nodes: [] };
+    // Deterministic fallback on total failure
+    const fallback = buildNodesFromQuestions();
+    return { score, nodes: fallback };
   }
 };
 
