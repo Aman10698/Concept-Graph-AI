@@ -153,6 +153,12 @@ export default function BloomPanel({ concept, parentTopic, subtopics = [], onClo
     const a = answers[idx];
     if (!a?.trim()) return;
     setEvalLoading(p => ({ ...p, [idx]: true }));
+
+    // Increment the global "questions answered" counter so Dashboard updates
+    const prevQ = parseInt(localStorage.getItem('answeredQuestionsCount') || '0', 10);
+    localStorage.setItem('answeredQuestionsCount', String(prevQ + 1));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'answeredQuestionsCount' }));
+
     try {
       const r = await fetch(`${API}/api/bloom/evaluate`, {
         method: 'POST',
@@ -430,6 +436,10 @@ export default function BloomPanel({ concept, parentTopic, subtopics = [], onClo
                           return (
                             <button key={key} disabled={revealed}
                               onClick={() => {
+                                // Increment global question counter so Dashboard updates
+                                const prevMCQ = parseInt(localStorage.getItem('answeredQuestionsCount') || '0', 10);
+                                localStorage.setItem('answeredQuestionsCount', String(prevMCQ + 1));
+                                window.dispatchEvent(new StorageEvent('storage', { key: 'answeredQuestionsCount' }));
                                 setMcqPicked(p => {
                                   const next = { ...p, [idx]: key };
                                   if (Object.keys(next).length >= questions.length && questions.length > 0) {

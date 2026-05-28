@@ -12,16 +12,56 @@ const STATUS = {
 
 /* ── Tree layout ────────────────────────────────────────────────── */
 function buildRoots(nodes) {
+  // Build name → node map
   const map = {};
   nodes.forEach(n => { map[n.name] = { ...n, children: [] }; });
+
+  // For fuzzy parent matching: build a lowercase lookup
+  const lowerMap = {};
+  Object.keys(map).forEach(k => { lowerMap[k.toLowerCase()] = k; });
+
+  // Find the root (status === 'current', or first node with parent 'none'/empty)
+  const rootNode = nodes.find(n => n.status === 'current')
+    || nodes.find(n => !n.parent || /^none$/i.test(n.parent))
+    || nodes[0];
+  const rootName = rootNode?.name;
+
   const roots = [];
   nodes.forEach(n => {
-    if (n.parent && n.parent !== 'none' && map[n.parent]) {
-      map[n.parent].children.push(map[n.name]);
+    const raw = n.parent || '';
+    const isRoot = /^none$/i.test(raw) || !raw || n.name === rootName;
+    if (isRoot) {
+      roots.push(map[n.name]);
+      return;
+    }
+    // Exact match
+    if (map[raw]) {
+      map[raw].children.push(map[n.name]);
+      return;
+    }
+    // Case-insensitive match
+    const ciKey = lowerMap[raw.toLowerCase()];
+    if (ciKey && map[ciKey]) {
+      map[ciKey].children.push(map[n.name]);
+      return;
+    }
+    // Partial / contains match
+    const partialKey = Object.keys(map).find(k =>
+      k.toLowerCase().includes(raw.toLowerCase()) ||
+      raw.toLowerCase().includes(k.toLowerCase())
+    );
+    if (partialKey) {
+      map[partialKey].children.push(map[n.name]);
+      return;
+    }
+    // Fallback: attach to root node so nothing is orphaned
+    if (rootName && map[rootName] && n.name !== rootName) {
+      map[rootName].children.push(map[n.name]);
     } else {
       roots.push(map[n.name]);
     }
   });
+
   return roots;
 }
 

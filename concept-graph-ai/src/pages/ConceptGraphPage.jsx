@@ -11,13 +11,17 @@ import { useWeaknessAnalysis } from '../hooks/useWeaknessAnalysis';
 import { useAuth } from '../context/AuthContext';
 import MindMapViewer from '../components/MindMapViewer';
 import GraphViewer from '../components/GraphViewer';
+// eslint-disable-next-line no-unused-vars
 import QuestionsDisplay from '../components/QuestionsDisplay';
 import QuestionPractice from '../components/QuestionPractice';
 import WeaknessTraceViewer from '../components/WeaknessTraceViewer';
+// eslint-disable-next-line no-unused-vars
 import DependencyViewer from '../components/DependencyViewer';
 import DependencyGraph from '../components/DependencyGraph';
 import ErrorDisplay from '../components/ErrorDisplay';
 import BloomPanel from '../components/BloomPanel';
+import KnowledgeGraphView from '../components/KnowledgeGraphView';
+import '../pages/KnowledgeGraphPage.css';
 import { persistGraphData } from '../services/dataPersistence';
 import { persistSessionData, persistEvaluation } from '../services/mongoProgressService';
 import {
@@ -111,6 +115,7 @@ const SectionHeader = ({ title, subtitle, action }) => (
 );
 
 /* ─── results summary ─────────────────────────────────────────── */
+// eslint-disable-next-line no-unused-vars
 const ResultsSummary = ({ topicsData, evaluationData, onGoToRootCause }) => {
   const topics = topicsData?.topics ?? [];
   const getName = t => (typeof t === 'string' ? t : t.name);
@@ -1123,58 +1128,92 @@ const ConceptGraphPage = () => {
   const currentIdx    = STEPS.findIndex(s => s.id === wizardStep);
 
   /* ─── layout ────────────────────────────────────────────────── */
+
+  /* ── mindmap step: full-bleed KnowledgeGraphView with StreakPanel ── */
+  if (wizardStep === 'mindmap' && topicsData) {
+    return (
+      <>
+        <KnowledgeGraphView
+          topicsData={topicsData}
+          evaluationData={evaluationData}
+          onNodeClick={(name) => {
+            const topicObj = topicsData.topics.find(t =>
+              (typeof t === 'string' ? t : t.name) === name
+            );
+            const subs = topicObj?.subtopics
+              ? topicObj.subtopics.map(s => typeof s === 'string' ? s : s.name).filter(Boolean)
+              : [];
+            setBloomTopic({ name, parent: null, subtopics: subs });
+          }}
+          onReset={handleReset}
+          completedSteps={completedSteps}
+          wizardChildren={null}
+        />
+
+        {/* Bloom modal — overlay on top of the full-bleed KG view */}
+        {bloomTopic && (
+          <BloomPanel
+            concept={bloomTopic.name}
+            parentTopic={bloomTopic.parent}
+            subtopics={bloomTopic.subtopics || []}
+            onQuizComplete={({ concept, score, rating, nodes = [], improvements = [] }) => {
+              handleEvalUpdate({ [concept]: { score, rating } });
+              setTopicDepGraphs(prev => {
+                const updated = { ...prev, [concept]: { score, rating, nodes, improvements, testedAt: Date.now() } };
+                localStorage.setItem('topicDepGraphs', JSON.stringify(updated));
+                if (activeSessionId) updateSessionData(activeSessionId, { topicDepGraphs: updated });
+                return updated;
+              });
+            }}
+            onClose={() => {
+              setBloomTopic(null);
+              completeStep('mindmap');
+            }}
+          />
+        )}
+
+        {errorHandler.error && (
+          <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 200, minWidth: 340 }}>
+            <ErrorDisplay error={errorHandler.error} onDismiss={() => errorHandler.clearError()} onRetry={() => {}} />
+          </div>
+        )}
+      </>
+    );
+  }
+
+  /* ── All other wizard steps: classic scrollable wizard layout ── */
   return (
-    <div>
-      {/* page header */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em', marginBottom: 4 }}>
+    <div style={{ padding: '28px', maxWidth: 900, margin: '0 auto' }}>
+      {/* Page header */}
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1e1b4b', letterSpacing: '-0.03em', marginBottom: 4 }}>
           Concept Visualization
         </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+        <p style={{ color: '#9ca3af', fontSize: '0.88rem' }}>
           Upload your syllabus and follow the steps to master every topic
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 24, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 20, alignItems: 'start' }}>
 
         {/* ── Left: step sidebar ── */}
-        <div className="t-card" style={{ padding: '12px 8px', position: 'sticky', top: 84 }}>
-          {/* connector spine — only show completed + active + next step */}
+        <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #eef0f6', padding: '12px 8px', position: 'sticky', top: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {(() => {
-              // Determine the last completed step index
-              const lastDoneIdx = STEPS.reduce((acc, s, i) =>
-                completedSteps.has(s.id) ? i : acc, -1);
-              // Show up to lastDoneIdx + 2 (current active + one peek ahead)
+              const lastDoneIdx = STEPS.reduce((acc, s, i) => completedSteps.has(s.id) ? i : acc, -1);
               const visibleUpTo = Math.min(lastDoneIdx + 2, STEPS.length - 1);
-
-                return STEPS.slice(0, visibleUpTo + 1).map((step, idx) => {
-                const status    = stepStatus(step.id);
-                const canClick  = canAccess(step.id);
+              return STEPS.slice(0, visibleUpTo + 1).map((step, idx) => {
+                const status   = stepStatus(step.id);
+                const canClick = canAccess(step.id);
                 const isCurrent = wizardStep === step.id;
-                const isLast    = idx === visibleUpTo;
-
+                const isLast   = idx === visibleUpTo;
                 return (
                   <React.Fragment key={step.id}>
-                    <StepItem
-                      step={step}
-                      index={idx}
-                      status={status}
-                      isCurrent={isCurrent}
-                      canClick={canClick}
-                      onClick={goTo}
-                    />
-                    {/* connector line — only between visible steps */}
+                    <StepItem step={step} index={idx} status={status} isCurrent={isCurrent} canClick={canClick} onClick={goTo} />
                     {!isLast && (
-                      <div style={{
-                        width: 2, height: 10,
-                        marginLeft: 31,
-                        background: completedSteps.has(step.id)
-                          ? '#22c55e'
-                          : 'rgba(99,102,241,0.12)',
-                        borderRadius: 999,
-                        transition: 'background 0.3s',
-                      }} />
+                      <div style={{ width: 2, height: 10, marginLeft: 31,
+                        background: completedSteps.has(step.id) ? '#22c55e' : 'rgba(99,102,241,0.12)',
+                        borderRadius: 999, transition: 'background 0.3s' }} />
                     )}
                   </React.Fragment>
                 );
@@ -1182,13 +1221,8 @@ const ConceptGraphPage = () => {
             })()}
           </div>
 
-          {/* reset */}
           {completedSteps.size > 0 && (
-            <button
-              onClick={handleReset}
-              className="t-btn t-btn-ghost t-btn-sm"
-              style={{ width: '100%', marginTop: 16 }}
-            >
+            <button onClick={handleReset} className="t-btn t-btn-ghost t-btn-sm" style={{ width: '100%', marginTop: 16 }}>
               Start Over
             </button>
           )}
@@ -1196,16 +1230,14 @@ const ConceptGraphPage = () => {
 
         {/* ── Right: active step content ── */}
         <div>
-          {/* step breadcrumb pill */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
-            <span style={{
-              padding: '4px 14px', borderRadius: 999,
-              background: 'linear-gradient(135deg, #6366f1, #3b82f6)',
-              color: '#fff', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.02em',
-            }}>
+          {/* Step breadcrumb pill */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <span style={{ padding: '4px 14px', borderRadius: 999,
+              background: 'linear-gradient(135deg, #7c3aed, #6366f1)',
+              color: '#fff', fontSize: '0.78rem', fontWeight: 700 }}>
               Step {currentIdx + 1} of {STEPS.length}
             </span>
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>
               {STEPS[currentIdx]?.desc}
             </span>
           </div>
@@ -1214,27 +1246,20 @@ const ConceptGraphPage = () => {
             {activeContent}
           </div>
 
-          {/* next step CTA — on mindmap only show after at least one quiz is answered */}
+          {/* Next step CTA — on mindmap only after quiz answered */}
           {completedSteps.has(wizardStep) &&
            (wizardStep !== 'mindmap' || Object.keys(evaluationData).length > 0) &&
            STEPS[currentIdx + 1] && (
-            <div style={{
-              marginTop: 14, padding: '12px 18px', borderRadius: 10,
+            <div style={{ marginTop: 14, padding: '12px 18px', borderRadius: 10,
               background: 'rgba(34,197,94,0.06)', border: '1.5px solid rgba(34,197,94,0.2)',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-            }}>
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: '#22c55e', fontSize: '1rem' }}>✓</span>
                 <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#166534' }}>
-                  {wizardStep === 'mindmap'
-                    ? `Quiz complete! View your Prerequisite Graph.`
-                    : 'This step is complete!'}
+                  {wizardStep === 'mindmap' ? 'Quiz complete! View your Prerequisite Graph.' : 'This step is complete!'}
                 </span>
               </div>
-              <button
-                onClick={() => goTo(STEPS[currentIdx + 1]?.id)}
-                className="t-btn t-btn-primary t-btn-sm"
-              >
+              <button onClick={() => goTo(STEPS[currentIdx + 1]?.id)} className="t-btn t-btn-primary t-btn-sm">
                 {wizardStep === 'mindmap' ? 'Prerequisite Graph' : STEPS[currentIdx + 1]?.label} →
               </button>
             </div>
@@ -1242,27 +1267,22 @@ const ConceptGraphPage = () => {
         </div>
       </div>
 
-      {/* error display */}
+      {/* Error display */}
       {errorHandler.error && (
         <div style={{ marginTop: 20 }}>
-          <ErrorDisplay
-            error={errorHandler.error}
-            onDismiss={() => errorHandler.clearError()}
-            onRetry={() => { if (wizardStep === 'upload') handleReset(); }}
-          />
+          <ErrorDisplay error={errorHandler.error} onDismiss={() => errorHandler.clearError()}
+            onRetry={() => { if (wizardStep === 'upload') handleReset(); }} />
         </div>
       )}
 
-      {/* ── Bloom's Taxonomy Modal — shown when a mind map node is clicked ── */}
+      {/* Bloom modal */}
       {bloomTopic && (
         <BloomPanel
           concept={bloomTopic.name}
           parentTopic={bloomTopic.parent}
           subtopics={bloomTopic.subtopics || []}
           onQuizComplete={({ concept, score, rating, nodes = [], improvements = [] }) => {
-            // 1. Recolour the mind map node
             handleEvalUpdate({ [concept]: { score, rating } });
-            // 2. Store the dep graph for this topic
             setTopicDepGraphs(prev => {
               const updated = { ...prev, [concept]: { score, rating, nodes, improvements, testedAt: Date.now() } };
               localStorage.setItem('topicDepGraphs', JSON.stringify(updated));
@@ -1270,11 +1290,7 @@ const ConceptGraphPage = () => {
               return updated;
             });
           }}
-          onClose={() => {
-            setBloomTopic(null);
-            // Mark mindmap step done so the next-step CTA appears
-            completeStep('mindmap');
-          }}
+          onClose={() => { setBloomTopic(null); completeStep('mindmap'); }}
         />
       )}
     </div>

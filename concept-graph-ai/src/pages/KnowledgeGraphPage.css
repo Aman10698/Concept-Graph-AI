@@ -1,0 +1,616 @@
+/* ============================================================
+   KNOWLEDGE GRAPH PAGE — Full Layout Matching Design
+   ============================================================ */
+
+.kg-page {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  height: calc(100vh - 64px);
+  overflow: hidden;
+  background: #f7f8fc;
+}
+
+/* ── Center: graph area ──────────────────────────────────── */
+.kg-center {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* toolbar */
+.kg-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: #fff;
+  border-bottom: 1px solid #eef0f6;
+  flex-shrink: 0;
+}
+
+.kg-toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #eef0f6;
+  background: #fff;
+  color: #374151;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.kg-toolbar-btn:hover {
+  background: #f5f3ff;
+  border-color: #7c3aed;
+  color: #7c3aed;
+}
+
+.kg-toolbar-sep {
+  flex: 1;
+}
+
+.kg-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid #eef0f6;
+  background: #fff;
+  color: #374151;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.kg-filter-btn:hover { background: #f5f5fa; border-color: #d1d5db; }
+
+.kg-view-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #7c3aed;
+  background: #f5f3ff;
+  color: #7c3aed;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* graph main area */
+.kg-graph-area {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+  position: relative;
+  min-height: 0;
+}
+
+/* concept node cards */
+.kg-node {
+  background: #fff;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  transition: all 0.2s;
+  cursor: pointer;
+  min-width: 160px;
+  position: relative;
+}
+
+.kg-node:hover {
+  box-shadow: 0 6px 20px rgba(99,102,241,0.15);
+  transform: translateY(-1px);
+  border-color: #7c3aed;
+}
+
+.kg-node-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.kg-node-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.kg-node-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1e1b4b;
+  line-height: 1.3;
+  flex: 1;
+}
+
+.kg-node-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.kg-node-bar-bg {
+  height: 5px;
+  background: #f1f3f9;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.kg-node-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s ease;
+}
+
+.kg-node-pct {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #6b7280;
+  text-align: right;
+}
+
+.kg-node-more {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 1rem;
+  line-height: 1;
+  transition: background 0.15s;
+}
+.kg-node-more:hover { background: #f5f5fa; color: #374151; }
+
+/* root node */
+.kg-node-root {
+  border-color: #7c3aed;
+  background: linear-gradient(135deg, #faf5ff 0%, #f5f3ff 100%);
+  box-shadow: 0 4px 20px rgba(124,58,237,0.15);
+}
+
+/* connector lines */
+.kg-connector {
+  position: absolute;
+  background: #d1d5db;
+  z-index: 0;
+}
+
+
+/* map minimap */
+.kg-minimap {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 130px;
+  height: 90px;
+  background: #fff;
+  border: 1px solid #eef0f6;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  overflow: hidden;
+}
+
+/* zoom controls */
+.kg-zoom-controls {
+  position: absolute;
+  bottom: 20px;
+  right: 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kg-zoom-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid #eef0f6;
+  background: #fff;
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  transition: all 0.15s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.kg-zoom-btn:hover { background: #f5f5fa; color: #7c3aed; }
+
+/* Recent Activity bar */
+.kg-activity-bar {
+  padding: 14px 20px;
+  background: #fff;
+  border-top: 1px solid #eef0f6;
+  flex-shrink: 0;
+}
+
+.kg-activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.kg-activity-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e1b4b;
+}
+
+.kg-activity-link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6366f1;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kg-activity-items {
+  display: flex;
+  gap: 24px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.kg-activity-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.kg-activity-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.kg-activity-text {
+  font-size: 0.74rem;
+  color: #374151;
+  font-weight: 500;
+  line-height: 1.4;
+  max-width: 140px;
+}
+
+.kg-activity-time {
+  font-size: 0.65rem;
+  color: #9ca3af;
+  margin-top: 1px;
+}
+
+/* ── Right panel ─────────────────────────────────────────── */
+.kg-right {
+  background: #fff;
+  border-left: 1px solid #eef0f6;
+  overflow-y: auto;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Streak card */
+.kg-streak-card {
+  background: #fff;
+  border: 1px solid #eef0f6;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.kg-streak-header {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.kg-streak-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.kg-streak-flame {
+  font-size: 1.8rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.kg-streak-num {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #ef4444;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.kg-streak-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #ef4444;
+}
+
+.kg-streak-sub {
+  font-size: 0.7rem;
+  color: #6b7280;
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.kg-streak-mascot {
+  font-size: 2.2rem;
+  margin-left: auto;
+}
+
+.kg-streak-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.kg-streak-bar-bg {
+  flex: 1;
+  height: 6px;
+  background: #f1f3f9;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.kg-streak-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ef4444, #f97316);
+}
+
+.kg-streak-tasks {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+/* Missions card */
+.kg-missions-card {
+  background: #fff;
+  border: 1px solid #eef0f6;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.kg-missions-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.kg-mission-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid #f9fafb;
+}
+
+.kg-mission-item:last-child { border-bottom: none; }
+
+.kg-mission-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #d1d5db;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.kg-mission-check.done {
+  background: #22c55e;
+  border-color: #22c55e;
+}
+
+.kg-mission-check.done svg { display: block; }
+.kg-mission-check svg { display: none; }
+
+.kg-mission-label {
+  flex: 1;
+  font-size: 0.76rem;
+  color: #374151;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.kg-mission-label.done {
+  color: #9ca3af;
+  text-decoration: line-through;
+}
+
+.kg-mission-progress {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.kg-mission-progress.done { color: #22c55e; }
+
+/* Streak Calendar */
+.kg-calendar-card {
+  background: #fff;
+  border: 1px solid #eef0f6;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.kg-calendar-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.kg-calendar-days-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.kg-cal-day-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #9ca3af;
+  text-align: center;
+}
+
+.kg-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.kg-cal-day {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  background: #f4f4f6;
+  border: 1px solid #ebebf0;
+  transition: all 0.15s;
+}
+
+.kg-cal-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.kg-cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.64rem;
+  color: #6b7280;
+}
+
+/* Shield card */
+.kg-shield-card {
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+  border: 1px solid #ddd6fe;
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.kg-shield-icon {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.kg-shield-info { flex: 1; min-width: 0; }
+
+.kg-shield-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #4c1d95;
+  margin-bottom: 2px;
+}
+
+.kg-shield-sub {
+  font-size: 0.68rem;
+  color: #7c3aed;
+  line-height: 1.3;
+}
+
+.kg-shield-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1.5px solid #7c3aed;
+  background: #fff;
+  color: #7c3aed;
+  font-size: 0.73rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.kg-shield-btn:hover { background: #7c3aed; color: #fff; }
+
+/* Upload / wizard area styles */
+.kg-wizard-wrap {
+  padding: 24px;
+  overflow: auto;
+  height: 100%;
+}
+
+.kg-step-sidebar {
+  padding: 12px 8px;
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #eef0f6;
+  position: sticky;
+  top: 0;
+}

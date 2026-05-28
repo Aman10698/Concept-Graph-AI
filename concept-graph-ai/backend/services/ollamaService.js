@@ -64,7 +64,8 @@ const extractJSON = (text) => {
    1. TOPIC EXTRACTION
 ══════════════════════════════════════════════════════════════════════════════ */
 const extractTopicsAdvanced = async (text) => {
-  const doc = text.replace(/\s+/g, ' ').trim().slice(0, 14000);
+  // Use up to 24 000 chars so all modules fit; Ollama needs more tokens for large syllabi
+  const doc = text.replace(/\s+/g, ' ').trim().slice(0, 24000);
 
   const prompt = `You are an expert academic curriculum analyst.
 
@@ -101,7 +102,8 @@ Respond ONLY with valid JSON, no explanation, no markdown:
 }`;
 
   try {
-    const raw    = await generateText(prompt, { temperature: 0.1, numPredict: 4000 });
+    // Raise numPredict so the full JSON isn't cut off mid-array for large syllabi
+    const raw    = await generateText(prompt, { temperature: 0.1, numPredict: 8000 });
     const parsed = extractJSON(raw);
     if (!parsed || !Array.isArray(parsed.topics) || parsed.topics.length === 0)
       throw new Error('Invalid topic structure from Ollama');
