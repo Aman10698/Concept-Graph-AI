@@ -7,18 +7,22 @@ const dependencyAnalysisService = require('../services/dependencyAnalysisService
  */
 const analyzeDependenciesController = async (req, res) => {
   try {
-    const { topics, extractedText, subject } = req.body;
+    const { topics, extractedText, subject, focusTopic } = req.body;
 
     if (!topics || !Array.isArray(topics) || topics.length === 0) {
       return res.status(400).json({ success: false, message: 'Topics array is required' });
     }
 
-    console.log(`🔍 Dependency analysis: ${topics.length} topic(s), subject="${subject || topics[0]}"`);
+    // focusTopic is the weak topic the student is drilling into.
+    // Use it as the subject so Ollama biases the prerequisite tree around it.
+    const effectiveSubject = focusTopic || subject || (topics.length === 1 ? topics[0] : '');
+
+    console.log(`🔍 Dependency analysis: ${topics.length} topic(s), focusTopic="${focusTopic || 'none'}", subject="${effectiveSubject}"`);
 
     const result = await dependencyAnalysisService.analyzeDependencies(
       topics,
       extractedText || '',
-      subject || (topics.length === 1 ? topics[0] : '')
+      effectiveSubject
     );
 
     res.status(200).json({

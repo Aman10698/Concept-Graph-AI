@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 
 /* ── colour helpers ─────────────────────────────────────────── */
 const NODE_TYPE_META = {
-  root:     { accent: '#6366f1', bg: 'rgba(99,102,241,0.08)',  icon: '🗺️',  label: 'Root',     badge: 't-badge-purple' },
-  topic:    { accent: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  icon: '📌',  label: 'Topic',    badge: 't-badge-blue'   },
-  subtopic: { accent: '#22c55e', bg: 'rgba(34,197,94,0.08)',   icon: '📎',  label: 'Subtopic', badge: 't-badge-green'  },
+  root:     { accent: '#6366f1', bg: 'rgba(99,102,241,0.08)',  icon: '▣',  label: 'Root',     badge: 't-badge-purple' },
+  topic:    { accent: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  icon: '◆',  label: 'Topic',    badge: 't-badge-blue'   },
+  subtopic: { accent: '#22c55e', bg: 'rgba(34,197,94,0.08)',   icon: '◇',  label: 'Subtopic', badge: 't-badge-green'  },
 };
 
 const EVAL_ACCENT = {
@@ -127,8 +127,8 @@ const NodeHierarchyTree = ({ nodes, evaluationData = {} }) => {
           />
           {/* left accent bar */}
           <rect x={xStart} y={yMid - 18} width={4} height={36} rx={2} fill={accent} />
-          {/* icon */}
-          <text x={xStart + 14} y={yMid + 5} fontSize={14} textAnchor="middle">{meta.icon}</text>
+          {/* icon text */}
+          <text x={xStart + 14} y={yMid + 5} fontSize={12} textAnchor="middle" fill={accent} fontWeight="700">{meta.icon}</text>
           {/* label */}
           <text
             x={xStart + 26} y={yMid + 1}
@@ -225,9 +225,9 @@ const NodeHierarchyTree = ({ nodes, evaluationData = {} }) => {
 
         {/* column headers */}
         {[
-          { label: '🗺️ Root',      x: x0,    n: roots.length },
-          { label: '📌 Topics',    x: x1,    n: topics.length },
-          { label: '📎 Subtopics', x: x2,    n: subtopics.length },
+          { label: 'Root',      x: x0,    n: roots.length },
+          { label: 'Topics',    x: x1,    n: topics.length },
+          { label: 'Subtopics', x: x2,    n: subtopics.length },
         ].map(({ label, x, n }) => n > 0 && (
           <text key={label} x={x + COL_W / 2} y={8} textAnchor="middle"
             fontSize={10} fontWeight={700} fill="var(--text-muted)"
@@ -258,7 +258,6 @@ const GraphViewer = ({ graph, stats, onExport, evaluationData = {} }) => {
   if (!graph?.nodes) {
     return (
       <div className="t-card" style={{ textAlign: 'center', padding: '48px 32px' }}>
-        <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>🗺️</div>
         <p style={{ color: 'var(--text-secondary)' }}>No graph data to display.</p>
       </div>
     );
@@ -306,7 +305,7 @@ const GraphViewer = ({ graph, stats, onExport, evaluationData = {} }) => {
           )}
 
           {/* icon */}
-          <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>{meta.icon}</span>
+          <span style={{ fontSize: '0.85rem', flexShrink: 0, color: accent, fontWeight: 700 }}>{meta.icon}</span>
 
           {/* label */}
           <div style={{ flex: 1, minWidth: 0 }}>

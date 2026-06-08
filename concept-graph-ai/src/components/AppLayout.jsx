@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import './AppLayout.css'
@@ -11,60 +11,9 @@ const Icon = {
       <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
     </svg>
   ),
-  graph: () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/>
-      <line x1="12" y1="7" x2="5" y2="17"/><line x1="12" y1="7" x2="19" y2="17"/>
-      <line x1="7" y1="19" x2="17" y2="19"/>
-    </svg>
-  ),
   practice: () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="5,3 19,12 5,21"/>
-    </svg>
-  ),
-  progress: () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/>
-    </svg>
-  ),
-  analytics: () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
-      <line x1="6" y1="20" x2="6" y2="14"/>
-    </svg>
-  ),
-  notes: () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-      <polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-    </svg>
-  ),
-  bookmarks: () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-    </svg>
-  ),
-  settings: () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3"/>
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-    </svg>
-  ),
-  ChevronRight: () => (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <polyline points="9,18 15,12 9,6"/>
-    </svg>
-  ),
-  Search: () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-    </svg>
-  ),
-  Bell: () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
     </svg>
   ),
   syllabuses: () => (
@@ -73,50 +22,59 @@ const Icon = {
       <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
     </svg>
   ),
-}
-
-/* ── Donut Chart ──────────────────────────────────────────── */
-function SidebarDonut({ strong, partial, weak, notPractised, total, pct }) {
-  const size = 72, sw = 14, r = (size - sw) / 2, circ = 2 * Math.PI * r
-  const segs = [
-    { v: strong,       color: '#22c55e' },
-    { v: partial,      color: '#f59e0b' },
-    { v: weak,         color: '#ef4444' },
-    { v: notPractised, color: '#e9eaf0' },
-  ]
-  const tot = total || 1
-  let cum = 0
-  return (
-    <svg width={size} height={size} style={{ display:'block', flexShrink: 0 }}>
-      {tot === notPractised ? (
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#e9eaf0" strokeWidth={sw} />
-      ) : (
-        segs.map((s, i) => {
-          if (!s.v) { cum += s.v / tot; return null }
-          const dash = (s.v / tot) * circ
-          const angle = cum * 360 - 90
-          cum += s.v / tot
-          return <circle key={i} cx={size/2} cy={size/2} r={r} fill="none"
-            stroke={s.color} strokeWidth={sw}
-            strokeDasharray={`${dash} ${circ}`} strokeDashoffset={0}
-            transform={`rotate(${angle} ${size/2} ${size/2})`} />
-        })
-      )}
-      <circle cx={size/2} cy={size/2} r={r - sw/2 - 2} fill="white" />
+  depgraph: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="3" r="2"/><circle cx="4" cy="19" r="2"/>
+      <circle cx="20" cy="19" r="2"/><circle cx="12" cy="19" r="2"/>
+      <line x1="12" y1="5" x2="4" y2="17"/><line x1="12" y1="5" x2="20" y2="17"/>
+      <line x1="12" y1="5" x2="12" y2="17"/>
     </svg>
-  )
+  ),
+  rag: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/>
+      <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/>
+    </svg>
+  ),
+  chat: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+  ),
+  settings: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+  ),
+  Bell: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+    </svg>
+  ),
+  learn: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+  ),
 }
 
 /* ── Nav Items ──────────────────────────────────────────────── */
 const NAV_ITEMS = [
-  { path: '/dashboard',     label: 'Dashboard',      icon: 'dashboard',  key: 'dashboard'  },
-  { path: '/concept-graph', label: 'Knowledge Graph', icon: 'graph',     key: 'mindmap'    },
-  { path: '/practice',      label: 'Practice',        icon: 'practice',   key: 'practice'   },
-  { path: '/syllabuses',    label: 'My Syllabuses',   icon: 'syllabuses', key: 'syllabuses' },
+  { path: '/dashboard',  label: 'Dashboard',    icon: 'dashboard',  key: 'dashboard'  },
+  { path: '/learn',      label: 'Upload Syllabus', icon: 'learn',    key: 'learn'      },
+  { path: '/practice',   label: 'Practice',      icon: 'practice',   key: 'practice'   },
+  { path: '/syllabuses', label: 'My Syllabuses', icon: 'syllabuses', key: 'syllabuses' },
+  { path: '/dep-graph',  label: 'Dep. Graph',    icon: 'depgraph',   key: 'depgraph'   },
+  { path: '/rag-study',  label: 'Upload Notes',  icon: 'rag',        key: 'rag'        },
+  { path: '/chats',      label: 'Chats',         icon: 'chat',       key: 'chats'      },
 ]
 
 const NAV_BOTTOM = [
-  { path: '/profile',  label: 'Settings', icon: 'settings', key: 'settings' },
+  { path: '/profile', label: 'Settings', icon: 'settings', key: 'settings' },
 ]
 
 export default function AppLayout({ children }) {
@@ -124,49 +82,7 @@ export default function AppLayout({ children }) {
   const navigate  = useNavigate()
   const { user, logout } = useAuth()
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [searchVal, setSearchVal] = useState('')
 
-  /* ── read evaluation data for sidebar progress ─── */
-  const { topicsData, evalData } = useMemo(() => {
-    try {
-      const t = localStorage.getItem('learningTopicsData')
-      const e = localStorage.getItem('learningEvaluationData')
-      return {
-        topicsData: t ? JSON.parse(t) : null,
-        evalData:   e ? JSON.parse(e) : {},
-      }
-    } catch { return { topicsData: null, evalData: {} } }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname])  // re-read localStorage on every route change so sidebar progress stays fresh
-
-  const topics      = topicsData?.topics ?? []
-  const getName     = t => typeof t === 'string' ? t : t.name
-
-  // Full node set = modules + all subtopics (mirrors Dashboard logic)
-  const allSidebarNodes = [
-    ...topics.map(getName),
-    ...topics.flatMap(t =>
-      Array.isArray(t.subtopics)
-        ? t.subtopics.map(s => (typeof s === 'string' ? s : s.name)).filter(Boolean)
-        : []
-    ),
-  ]
-  const totalTopics  = allSidebarNodes.length
-  const answeredNodes = allSidebarNodes.filter(n => evalData[n])
-  const nodeRatings  = answeredNodes.map(n => evalData[n])
-  const strong       = nodeRatings.filter(r => r.rating === 'strong').length
-  const partial      = nodeRatings.filter(r => r.rating === 'partial' || r.rating === 'moderate').length
-  const weak         = nodeRatings.filter(r => r.rating === 'weak').length
-  const answered     = answeredNodes.length
-  const notPractised = Math.max(totalTopics - answered, 0)
-  const mastery      = totalTopics > 0 ? Math.round((strong / totalTopics) * 100) : 0
-
-  /* weakest topics by confidence */
-  const weakTopics = topics
-    .map(t => ({ name: getName(t), ...evalData[getName(t)] }))
-    .filter(t => t.rating === 'weak' || t.rating === 'partial')
-    .sort((a,b) => (a.confidence||0) - (b.confidence||0))
-    .slice(0, 3)
 
   const initials = user?.displayName
     ? user.displayName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -177,28 +93,28 @@ export default function AppLayout({ children }) {
 
   const isNavActive = (item) => {
     if (item.key === 'dashboard')  return location.pathname === '/dashboard'
-    if (item.key === 'mindmap')    return location.pathname === '/concept-graph'
     if (item.key === 'practice')   return location.pathname === '/practice'
     if (item.key === 'syllabuses') return location.pathname === '/syllabuses'
+    if (item.key === 'depgraph')   return location.pathname === '/dep-graph'
     if (item.key === 'settings')   return location.pathname === '/profile'
+    if (item.key === 'rag')        return location.pathname === '/rag-study'
+    if (item.key === 'chats')      return location.pathname === '/chats'
     return false
   }
 
   /* header title per route */
   const headerInfo = (() => {
     const p = location.pathname
-    if (p === '/dashboard')     return { title: 'Dashboard', sub: 'Track your learning progress' }
-    if (p === '/concept-graph') return { title: 'Knowledge Graph', sub: 'Visualize concepts, dependencies and your mastery' }
-    if (p === '/practice')      return { title: 'Practice', sub: 'Quiz yourself on any topic' }
-    if (p === '/syllabuses')    return { title: 'My Syllabuses', sub: 'Manage your uploaded syllabuses' }
-    if (p === '/profile')       return { title: 'Settings', sub: 'Manage your account' }
+    if (p === '/dashboard')  return { title: 'Dashboard',         sub: 'Track your learning progress' }
+    if (p === '/practice')   return { title: 'Practice',           sub: 'Quiz yourself on any topic' }
+    if (p === '/syllabuses') return { title: 'My Syllabuses',      sub: 'Manage your uploaded syllabuses' }
+    if (p === '/dep-graph')  return { title: 'Prerequisite Graph', sub: 'AI-generated dependency analysis from your quiz answers' }
+    if (p === '/profile')    return { title: 'Settings',           sub: 'Manage your account' }
+    if (p === '/rag-study')  return { title: 'Upload Notes',       sub: 'Upload your notes or textbooks to power the Chats assistant' }
+    if (p === '/chats')      return { title: 'Chats',              sub: 'Ask Ollama questions about your uploaded documents' }
     return { title: 'ConceptGraph', sub: 'Learn. Connect. Master.' }
   })()
 
-  const WEAK_COLORS = {
-    weak:    { bg: '#fef2f2', color: '#ef4444' },
-    partial: { bg: '#fffbeb', color: '#f59e0b' },
-  }
 
   return (
     <div className="al-root">
@@ -244,60 +160,13 @@ export default function AppLayout({ children }) {
               to={item.path}
               className={`al-nav-item ${isNavActive(item) ? 'al-active' : ''}`}
             >
-              <span className="al-nav-icon">{Icon[item.icon]?.()}</span>
               <span className="al-nav-label">{item.label}</span>
             </Link>
           ))}
         </nav>
 
-        {/* Overall Progress in Sidebar */}
-        {totalTopics > 0 && (
-          <div className="al-sidebar-progress">
-            <div className="al-progress-title">Overall Progress</div>
-            <div className="al-donut-wrap">
-              <SidebarDonut
-                strong={strong} partial={partial} weak={weak}
-                notPractised={notPractised} total={totalTopics}
-                pct={mastery}
-              />
-              <div className="al-donut-info">
-                <div className="al-donut-pct">{mastery}%</div>
-                <div className="al-donut-label">
-                  {mastery >= 70 ? 'Good Progress! 🎉' : mastery >= 40 ? 'Keep Going! 💪' : 'Just Started 🌱'}
-                </div>
-                <div className="al-donut-sub">{strong}/{totalTopics} concepts mastered</div>
-              </div>
-            </div>
-            <div className="al-mastery-bar">
-              <div className="al-mastery-bar-fill" style={{ width: `${mastery}%` }} />
-            </div>
 
-            {weakTopics.length > 0 && (
-              <div className="al-weak-areas">
-                <div className="al-weak-title">Weakest Areas</div>
-                {weakTopics.map((t, i) => {
-                  const clr = WEAK_COLORS[t.rating] || WEAK_COLORS.weak
-                  return (
-                    <div key={i} className="al-weak-item">
-                      <div className="al-weak-icon" style={{ background: clr.bg }}>
-                        <span style={{ color: clr.color, fontSize: '0.8rem' }}>
-                          {t.rating === 'weak' ? '📉' : '📊'}
-                        </span>
-                      </div>
-                      <span className="al-weak-name">{t.name}</span>
-                      <span className="al-weak-pct" style={{ color: clr.color }}>
-                        {t.confidence || 0}%
-                      </span>
-                    </div>
-                  )
-                })}
-                <Link to="/concept-graph" className="al-weak-link">
-                  View Weak Areas <Icon.ChevronRight />
-                </Link>
-              </div>
-            )}
-          </div>
-        )}
+
 
       </aside>
 
@@ -310,16 +179,6 @@ export default function AppLayout({ children }) {
             <div className="al-header-subtitle">{headerInfo.sub}</div>
           </div>
           <div className="al-header-right">
-            {/* Search */}
-            <div className="al-search">
-              <Icon.Search />
-              <input
-                type="text"
-                placeholder="Search concepts, topics or skills..."
-                value={searchVal}
-                onChange={e => setSearchVal(e.target.value)}
-              />
-            </div>
 
             {/* Bell */}
             <button className="al-bell" aria-label="Notifications">
@@ -381,7 +240,7 @@ export default function AppLayout({ children }) {
         </header>
 
         {/* Page content */}
-        <div className={`al-content${location.pathname !== '/concept-graph' ? ' al-content-padded' : ''}`}>
+        <div className={`al-content${(location.pathname === '/chats' || location.pathname === '/rag-study') ? '' : ' al-content-padded'}`}>
           {children}
         </div>
       </main>

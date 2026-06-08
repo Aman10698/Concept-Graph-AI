@@ -1,5 +1,5 @@
 const express = require('express');
-const ollamaService = require('../services/ollamaService');
+const ollamaService = require('../services/ollamaWorkerService');  // ★ runs in isolated subprocess
 
 const router = express.Router();
 

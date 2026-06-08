@@ -1,5 +1,5 @@
 const { evaluateAnswer: ruleBasedEvaluate } = require('../services/answerEvaluationService');
-const ollamaService = require('../services/ollamaService');
+const ollamaService = require('../services/ollamaWorkerService');  // ★ runs in isolated subprocess
 
 /**
  * POST /api/evaluate-answer

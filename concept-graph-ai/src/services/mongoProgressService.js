@@ -5,8 +5,10 @@
  *
  * Falls back gracefully if the backend is unavailable.
  */
+import { setEvalStorage } from '../utils/evalBus';
 
 const API_BASE = 'http://localhost:5000/api';
+
 
 /* ─── save full session data ─────────────────────────────────── */
 export const saveProgressToMongo = async (userId, data = {}) => {
@@ -81,8 +83,8 @@ export const persistSessionData = async (userId, { topicsData, questionsData, de
  * Persist evaluation data (called after every quiz answer).
  */
 export const persistEvaluation = async (userId, evaluationData) => {
-  // 1. localStorage
-  localStorage.setItem('learningEvaluationData', JSON.stringify(evaluationData));
+  // 1. localStorage via evalBus so all same-tab listeners are notified
+  setEvalStorage('learningEvaluationData', JSON.stringify(evaluationData));
 
   // 2. MongoDB (merge, don't replace)
   if (userId) {
@@ -90,6 +92,7 @@ export const persistEvaluation = async (userId, evaluationData) => {
       .catch(() => {});
   }
 };
+
 
 /**
  * Load session data on app start.

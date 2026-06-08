@@ -98,9 +98,10 @@ export const batchPersistQuizResults = async (userId, results) => {
   }
 };
 
-export default {
+const dataPersistenceService = {
   persistGraphData,
   persistQuizResult,
   persistWeakTopicDetection,
   batchPersistQuizResults,
 };
+export default dataPersistenceService;

@@ -8,7 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const { processingWorkflow, quizWorkflow } = require('../services/workflowService');
-const firebaseService = require('../services/firebaseService');
+const mongoService = require('../services/mongoService');
 
 /**
  * ENDPOINT 1: Process Complete Document
@@ -23,6 +23,7 @@ const firebaseService = require('../services/firebaseService');
  * 6. Save to database
  */
 const processDocument = async (req, res) => {
+  const filePath = req.file?.path;
   try {
     const { userId } = req.body;
     
@@ -50,13 +51,20 @@ const processDocument = async (req, res) => {
       userId
     );
 
+    // ★ Delete temp file — text is already saved to MongoDB by the workflow
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+
+    // Do NOT return the full text in the response (can be 100KB+)
+    const { text: _text, ...dataWithoutText } = result.data;
+
     res.status(200).json({
       success: true,
       message: 'Document processed successfully',
-      data: result.data,
+      data: dataWithoutText,
       summary: result.summary,
     });
   } catch (error) {
+    if (filePath) { try { fs.unlinkSync(filePath); } catch (_) {} }
     console.error('❌ Pipeline error:', error);
     res.status(500).json({
       success: false,
@@ -91,19 +99,15 @@ const generateQuiz = async (req, res) => {
     // Get user's graphs or use specific one
     let topics = [];
     if (graphId) {
-      const graphs = await firebaseService.getUserGraphs(userId);
-      const graph = graphs.find(g => g.id === graphId);
-      if (graph) {
-        topics = graph.topics;
-      }
+      const graphs = await mongoService.getUserGraphs(userId);
+      const graph = graphs.find(g => g._id?.toString() === graphId || g.id === graphId);
+      if (graph) topics = graph.topics || [];
     } else if (topicFilter) {
       topics = Array.isArray(topicFilter) ? topicFilter : [topicFilter];
     } else {
       // Get topics from most recent graph
-      const graphs = await firebaseService.getUserGraphs(userId);
-      if (graphs.length > 0) {
-        topics = graphs[0].topics;
-      }
+      const graphs = await mongoService.getUserGraphs(userId);
+      if (graphs.length > 0) topics = graphs[0].topics || [];
     }
 
     if (topics.length === 0) {
@@ -215,9 +219,9 @@ const getStatistics = async (req, res) => {
     console.log(`\n📊 Getting statistics for user: ${userId}`);
 
     // Get statistics
-    const stats = await firebaseService.getQuizStatistics(userId);
-    const progress = await firebaseService.getUserProgress(userId);
-    const graphs = await firebaseService.getUserGraphs(userId);
+    const stats    = await mongoService.getQuizStatistics(userId);
+    const progress = await mongoService.getUserProgress(userId);
+    const graphs   = await mongoService.getUserGraphs(userId);
 
     console.log(`✅ Statistics retrieved successfully`);
 
@@ -228,9 +232,9 @@ const getStatistics = async (req, res) => {
         quizStats: stats,
         progress,
         graphs: graphs.map(g => ({
-          id: g.id,
-          topics: g.topics.length,
-          relationships: g.relationships.length,
+          id: g._id?.toString() || g.id,
+          topics: (g.topics || []).length,
+          relationships: (g.relationships || []).length,
           createdAt: g.createdAt,
         })),
       },
@@ -269,8 +273,8 @@ const getProgress = async (req, res) => {
     console.log(`\n📈 Getting progress for user: ${userId}`);
 
     // Get progress data
-    const progress = await firebaseService.getUserProgress(userId);
-    const stats = await firebaseService.getQuizStatistics(userId);
+    const progress = await mongoService.getUserProgress(userId);
+    const stats    = await mongoService.getQuizStatistics(userId);
 
     // Categorize topics
     const topicsSummary = {
@@ -350,9 +354,9 @@ const getRecommendations = async (req, res) => {
     console.log(`\n💡 Getting recommendations for user: ${userId}`);
 
     // Get data
-    const progress = await firebaseService.getUserProgress(userId);
-    const stats = await firebaseService.getQuizStatistics(userId);
-    const graphs = await firebaseService.getUserGraphs(userId);
+    const progress = await mongoService.getUserProgress(userId);
+    const stats    = await mongoService.getQuizStatistics(userId);
+    const graphs   = await mongoService.getUserGraphs(userId);
 
     // Generate recommendations
     const recommendations = {

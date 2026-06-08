@@ -60,4 +60,21 @@ router.post('/upload', upload.single('file'), uploadController.uploadFile);
 // DELETE /api/upload/:filename
 router.delete('/upload/:filename', uploadController.deleteFile);
 
+// ── Multer & general error handler ────────────────────────────────
+router.use((err, req, res, next) => {
+  console.error('uploadRoutes error:', err.message);
+
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ success: false, message: 'File too large. Maximum size is 10 MB.' });
+  }
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ success: false, message: `Upload error: ${err.message}` });
+  }
+  if (err.message && err.message.includes('Only PDF')) {
+    return res.status(400).json({ success: false, message: err.message });
+  }
+
+  res.status(500).json({ success: false, message: err.message || 'Upload failed' });
+});
+
 module.exports = router;

@@ -3,7 +3,7 @@
  * Uses Google Gemini for full hierarchical topic analysis.
  */
 
-const ollamaService = require('./ollamaService');
+const ollamaService = require('./ollamaWorkerService');
 
 /**
  * Main entry point called by workflowService.
@@ -12,7 +12,13 @@ const ollamaService = require('./ollamaService');
 const identifyTopicsAndSubtopics = async (text) => {
   console.log('✨ [Gemini] Extracting topics from document...');
 
-  const result = await ollamaService.extractTopicsAdvanced(text);
+  let result = null;
+  try {
+    result = await ollamaService.extractTopicsAdvanced(text);
+  } catch (ollamaErr) {
+    console.warn('⚠️  Ollama unavailable in topicExtractionService, using keyword fallback:', ollamaErr.message);
+    return fallbackExtraction(text);
+  }
 
   if (!result || !Array.isArray(result.topics) || result.topics.length === 0) {
     console.warn('⚠️  Gemini returned no topics — falling back to basic extraction');

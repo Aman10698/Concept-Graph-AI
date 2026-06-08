@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import QuestionPractice from '../components/QuestionPractice'
 import QuizMindMap from '../components/QuizMindMap'
 import BloomPanel from '../components/BloomPanel'
 import LearningPathPanel from '../components/LearningPathPanel'
-import RootCauseGraph from '../components/RootCauseGraph'
 import { useAuth } from '../context/AuthContext'
 import { persistEvaluation } from '../services/mongoProgressService'
 import { loadSession, getActiveSessionId, saveSessionEvaluation, updateSessionData } from '../services/sessionService'
+import { setEvalStorage } from '../utils/evalBus'
 
 /* ─── colour helpers ─────────────────────────────────────────── */
 const nodeColor = r =>
@@ -22,8 +22,6 @@ const ratingLabel = r =>
   : r === 'weak'  ? 'Needs Work'
   : 'Not Started'
 
-const ratingPct = r =>
-  r === 'strong' ? 100 : r === 'partial' || r === 'moderate' ? 55 : r === 'weak' ? 20 : 0
 
 /* ═══════════════════════════════════════════════════════════════ */
 export default function PracticePage() {
@@ -36,7 +34,9 @@ export default function PracticePage() {
   const [generatingFor,  setGeneratingFor]  = useState(null)
   const [sessionText,    setSessionText]    = useState('')
   const [sessionTitle,   setSessionTitle]   = useState('My Course')
-  const [quizCompleted,  setQuizCompleted]  = useState(false)
+  // Incremented on every eval update so QuizMindMap always gets a fresh key
+  const mapRevRef = useRef(0)
+  const [mapRevision, setMapRevision] = useState(0)
 
   const { user } = useAuth()
 
@@ -176,12 +176,21 @@ export default function PracticePage() {
 
   /* ── eval update ── */
   const handleEvalUpdate = ev => {
+    // Stamp each entry with the current time so Recent Activity shows real timestamps
+    const now = Date.now()
+    const stamped = Object.fromEntries(
+      Object.entries(ev).map(([k, v]) => [k, { ...v, practicedAt: v.practicedAt ?? now }])
+    )
     setEvalData(prev => {
-      const merged = { ...prev, ...ev }
-      localStorage.setItem('learningEvaluationData', JSON.stringify(merged))
+      const merged = { ...prev, ...stamped }
+      // Use setEvalStorage so same-tab Dashboard also gets notified
+      setEvalStorage('learningEvaluationData', JSON.stringify(merged))
       const activeId = getActiveSessionId()
       if (activeId) saveSessionEvaluation(activeId, ev)
       else if (user) persistEvaluation(user.uid, merged)
+      // Bump revision counter so QuizMindMap re-renders with updated colors
+      mapRevRef.current += 1
+      setMapRevision(mapRevRef.current)
       return merged
     })
   }
@@ -191,7 +200,6 @@ export default function PracticePage() {
   const weakTopics    = topics
     .map(t => getName(t))
     .filter(name => evalData[name]?.rating === 'weak')
-  const allGreen = masteredCount === topics.length && topics.length > 0
 
   /* ══════════════════════════════════════════════════════════════
      EMPTY STATE
@@ -208,7 +216,7 @@ export default function PracticePage() {
           <p style={{ color: '#6b7280', fontSize: '0.9rem', maxWidth: 380, margin: '0 auto 28px' }}>
             Upload a syllabus on the Learn page first. Topics will be extracted and appear here as an interactive mind map.
           </p>
-          <Link to="/concept-graph" id="practice-upload-cta" style={{
+          <Link to="/learn" id="practice-upload-cta" style={{
             display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 28px',
             borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
             color: '#fff', fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none',
@@ -297,10 +305,7 @@ export default function PracticePage() {
               questionsData={{ ...questionsData, questions: topicQ }}
               onEvaluationUpdate={handleEvalUpdate}
               onWeakAnswerDetected={() => {}}
-              onComplete={() => {
-                setQuizCompleted(true)
-                setSelectedTopic(null)
-              }}
+              onComplete={() => setSelectedTopic(null)}
             />
           </div>
         ) : isGenerating || generatingFor ? (
@@ -348,16 +353,42 @@ export default function PracticePage() {
                 parentTopic={bloomNode.parentName}
                 subtopics={bloomNode.subtopics || []}
                 onQuizComplete={({ concept, score, rating, nodes = [], improvements = [] }) => {
-                  // Update evalData so the mind map node recolours immediately
+                  // 1. Update React state + localStorage immediately (for instant UI update)
                   setEvalData(prev => {
-                    const merged = { ...prev, [concept]: { score, rating } }
-                    localStorage.setItem('learningEvaluationData', JSON.stringify(merged))
-                    // Store dep graph data for Prerequisite Graph
+                    const merged = { ...prev, [concept]: { score, rating, practicedAt: Date.now() } }
+                    // Use setEvalStorage so Dashboard and other listeners wake up in the same tab
+                    setEvalStorage('learningEvaluationData', JSON.stringify(merged))
+
+                    // Update topicDepGraphs in localStorage (both global + per-session keys)
                     const depGraphs = (() => {
                       try { return JSON.parse(localStorage.getItem('topicDepGraphs') || '{}') } catch { return {} }
                     })()
                     depGraphs[concept] = { score, rating, nodes, improvements, testedAt: Date.now() }
                     localStorage.setItem('topicDepGraphs', JSON.stringify(depGraphs))
+
+                    // Also update the per-session scoped key so DepGraphPage cache is fresh
+                    const activeId = localStorage.getItem('activeSessionId')
+                    if (activeId) {
+                      const scopedKey = `topicDepGraphs_${activeId}`
+                      const scoped = (() => {
+                        try { return JSON.parse(localStorage.getItem(scopedKey) || '{}') } catch { return {} }
+                      })()
+                      scoped[concept] = depGraphs[concept]
+                      localStorage.setItem(scopedKey, JSON.stringify(scoped))
+
+                      // 2. Persist to MongoDB so DepGraphPage, Dashboard, and other sessions
+                      //    see the latest scores (fire-and-forget — don't block UI)
+                      saveSessionEvaluation(activeId, { [concept]: { score, rating, practicedAt: Date.now() } })
+                        .catch(e => console.warn('[Quiz] saveSessionEvaluation failed:', e.message))
+
+                      updateSessionData(activeId, { topicDepGraphs: depGraphs })
+                        .catch(e => console.warn('[Quiz] updateSessionData failed:', e.message))
+                    }
+
+                    // Bump revision so mind map re-renders with updated node colors
+                    mapRevRef.current += 1
+                    setMapRevision(mapRevRef.current)
+
                     return merged
                   })
                 }}
@@ -368,7 +399,7 @@ export default function PracticePage() {
           ) : (
             <div className="t-card" style={{ padding: '18px', background: 'linear-gradient(135deg,#f8faff 0%,#f0f4ff 100%)' }}>
               <QuizMindMap
-                key={JSON.stringify(Object.keys(evalData).map(k => evalData[k]?.rating))}
+                key={mapRevision}
                 topics={topics}
                 evalData={evalData}
                 courseTitle={sessionTitle}
@@ -458,18 +489,7 @@ export default function PracticePage() {
             </div>
           </div>
 
-          {/* Go to Learn */}
-          <div className="t-card" style={{ padding: '14px 16px', background: 'rgba(99,102,241,0.04)', border: '1.5px solid rgba(99,102,241,0.15)' }}>
-            <p style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>New Syllabus?</p>
-            <p style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 10 }}>Upload one to generate a new mind map and quiz set.</p>
-            <Link to="/concept-graph" style={{
-              display: 'block', textAlign: 'center', padding: '8px 0', borderRadius: 8,
-              background: 'linear-gradient(135deg,#6366f1,#3b82f6)',
-              color: '#fff', fontWeight: 700, fontSize: '0.8rem', textDecoration: 'none',
-            }}>
-              Go to Learn →
-            </Link>
-          </div>
+
         </div>
       </div>
     </div>

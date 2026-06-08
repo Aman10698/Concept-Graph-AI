@@ -1,0 +1,6 @@
+{
+  "exec": "node --max-old-space-size=4096 server.js",
+  "watch": ["server.js", "routes/", "controllers/", "services/", "models/", "utils/", "workers/"],
+  "ext": "js,json",
+  "ignore": ["node_modules/", "uploads/", "lancedb/"]
+}

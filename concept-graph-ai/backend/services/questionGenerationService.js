@@ -3,7 +3,7 @@
  * Uses Google Gemini for document-grounded question generation.
  */
 
-const ollamaService = require('./ollamaService');
+const ollamaService = require('./ollamaWorkerService');
 
 /**
  * Generate questions from extracted topic data.
@@ -29,9 +29,9 @@ const generateQuestionsFromTopics = async (topicsData, docText = '') => {
     .join('\n');
 
   const questions = await ollamaService.generateDocumentQuestions(
-    topicNames,
-    subtopicLines,
-    docText
+    topicNames.map(name => ({ name })),
+    docText.slice(0, 2000),   // doc context for RAG-grounded questions
+    3                          // questions per topic
   );
 
   if (!questions || questions.length === 0) {

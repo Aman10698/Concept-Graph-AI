@@ -23,6 +23,10 @@ const SessionSchema = new mongoose.Schema({
   // Shape: { "TopicName": { rating, score, confidence, updatedAt } }
   evaluationData: { type: mongoose.Schema.Types.Mixed, default: {} },
 
+  // Per-topic prerequisite dependency graphs generated after each quiz
+  // Shape: { "TopicName": { rating, score, nodes, improvements, testedAt } }
+  topicDepGraphs: { type: mongoose.Schema.Types.Mixed, default: {} },
+
   // Computed counts (for list view — avoids fetching full data)
   topicCount:     { type: Number, default: 0 },
   questionCount:  { type: Number, default: 0 },

@@ -5,7 +5,11 @@
 
 const express = require('express');
 const router = express.Router();
-const ollamaService = require('../services/ollamaService');
+// ⚠️  Use ollamaWorkerService (spawns isolated child processes), NOT ollamaService directly.
+// Direct ollamaService calls buffer the full LLM response in the main server heap
+// and will crash with OOM. The worker approach keeps the server heap < 100 MB.
+const ollamaWorkerService = require('../services/ollamaWorkerService');
+const ollamaService = require('../services/ollamaService'); // only for health/test (small payloads)
 
 /**
  * GET /api/ollama/health
@@ -71,34 +75,45 @@ router.post('/ollama/test', async (req, res) => {
 
 /**
  * POST /api/ollama/generate-questions
- * Generate questions from topics
+ * Generate questions from topics or Ollama's own knowledge.
+ * Body: { topics?: string[], context?: string, subject?: string, questionsPerTopic?: number }
+ * If topics is empty, Ollama generates general questions on `subject`.
  */
 router.post('/ollama/generate-questions', async (req, res) => {
   try {
-    const { topics = [], context = '' } = req.body;
+    const { topics = [], context = '', subject = 'General Knowledge', questionsPerTopic = 3 } = req.body;
 
+    // If no topics provided, generate general questions from Ollama's own knowledge
     if (!topics || topics.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide topics array',
+      console.log(`📚 Generating general questions on "${subject}" from Ollama knowledge`);
+      const questions = await ollamaWorkerService.generateDocumentQuestions(
+        [{ name: subject }],
+        context,  // may be empty — Ollama uses its own knowledge
+        questionsPerTopic
+      );
+      return res.status(200).json({
+        success: true,
+        source: 'ollama-knowledge',
+        subject,
+        questions,
+        count: questions.length,
       });
     }
 
-    console.log('📚 Generating questions for topics:', topics);
-
-    const questions = await ollamaService.generateAdvancedQuestions(topics, context);
+    // Topics provided — generate grounded questions
+    console.log(`📚 Generating questions for ${topics.length} topics`);
+    const topicObjects = topics.map(t => (typeof t === 'string' ? { name: t } : t));
+    const questions = await ollamaWorkerService.generateDocumentQuestions(topicObjects, context, questionsPerTopic);
 
     res.status(200).json({
       success: true,
+      source: context ? 'rag-context' : 'ollama-knowledge',
       topics,
       questions,
       count: questions.length,
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -119,7 +134,7 @@ router.post('/ollama/evaluate-answer', async (req, res) => {
 
     console.log('📊 Evaluating answer for question:', question);
 
-    const evaluation = await ollamaService.evaluateAnswer(question, answer, concepts);
+    const evaluation = await ollamaWorkerService.evaluateAnswer(question, answer, concepts[0] || question);
 
     res.status(200).json({
       success: true,
@@ -150,9 +165,9 @@ router.post('/ollama/extract-topics', async (req, res) => {
       });
     }
 
-    console.log('🧠 Extracting topics from text');
+    console.log('🧠 Extracting topics from text (worker)');
 
-    const result = await ollamaService.extractTopicsAdvanced(text);
+    const result = await ollamaWorkerService.extractTopicsAdvanced(text);
 
     res.status(200).json({
       success: true,

@@ -1,9 +1,9 @@
 import { useState } from 'react'
 
 const ACTION_STYLE = {
-  Revise:   { color: '#f59e0b', bg: '#fefce8', border: '#fde68a', icon: '🔄' },
-  Learn:    { color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe', icon: '📖' },
-  Practice: { color: '#22c55e', bg: '#f0fdf4', border: '#bbf7d0', icon: '✍️' },
+  Revise:   { color: '#f59e0b', bg: '#fefce8', border: '#fde68a' },
+  Learn:    { color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe' },
+  Practice: { color: '#22c55e', bg: '#f0fdf4', border: '#bbf7d0' },
 }
 
 function StepCard({ step, isLast }) {
@@ -16,9 +16,9 @@ function StepCard({ step, isLast }) {
           width: 36, height: 36, borderRadius: '50%',
           background: s.bg, border: `2px solid ${s.border}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.95rem',
+          fontSize: '0.7rem', fontWeight: 800, color: s.color, letterSpacing: '-0.01em',
         }}>
-          {s.icon}
+          {step.action?.[0] ?? '?'}
         </div>
         {!isLast && (
           <div style={{ width: 2, flex: 1, minHeight: 20, background: '#e2e8f0', margin: '4px 0' }} />

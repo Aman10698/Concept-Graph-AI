@@ -3,6 +3,10 @@
  * Generates Bloom-level questions and evaluates answers using Ollama.
  */
 
+// ⚠️  IMPORTANT: Import directly from ollamaService (direct HTTP to Ollama), NOT
+// from ollamaWorkerService. This file is called from inside ollamaWorker.js child
+// processes — using ollamaWorkerService would spawn ANOTHER child process recursively,
+// causing runaway memory usage and "JavaScript heap out of memory" crashes.
 const { generateText } = require('./ollamaService');
 
 const BLOOM_ORDER = ['remember','understand','apply','analyze','evaluate','create'];
@@ -38,24 +42,41 @@ function extractJSON(text) {
 /* ═══════════════════════════════════════════════════════════════════════
    1. GENERATE BLOOM-LEVEL QUESTIONS
 ═══════════════════════════════════════════════════════════════════════ */
-const generateBloomQuestions = async (concept, bloomLevel, parentTopic = '', n = 3) => {
+const generateBloomQuestions = async (concept, bloomLevel, parentTopic = '', n = 3, ragContext = '') => {
   const descriptor = BLOOM_DESCRIPTORS[bloomLevel] || bloomLevel;
   const verbs      = BLOOM_VERBS[bloomLevel]       || '';
   const context    = parentTopic ? `Subject area: "${parentTopic}".` : '';
+  const docSection = ragContext
+    ? `\nUse the following source material as the basis for your questions — base every question on content that appears in this text:\n\"\"\"\n${ragContext}\n\"\"\"\n`
+    : '';
 
-  const prompt = `You are a university professor. ${context}
-Write exactly ${n} exam questions about "${concept}" at Bloom's Taxonomy level: ${bloomLevel} (${descriptor}).
-Use these verbs as a guide: ${verbs}.
-Output ONLY a plain numbered list. No extra text, no markdown, no explanations.
-Example format:
-1. What is the definition of X?
-2. Explain how X works in your own words.
-3. Compare X and Y.
+  // Key words from the concept name used to validate questions are on-topic
+  const conceptWords = concept
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 3);
 
-Now write ${n} questions about "${concept}" at the ${bloomLevel} level:`;
+  const prompt = `You are a university professor. ${context}${docSection}
+Your task: Write EXACTLY ${n} exam questions about the topic "${concept}".
+Bloom level: ${bloomLevel} (${descriptor}).
+Bloom verbs to use: ${verbs}.
+
+CRITICAL RULES — follow strictly:
+- EVERY question MUST be specifically about "${concept}". Do NOT ask about any other topic.
+- EVERY question MUST end with a question mark.
+- Output ONLY a numbered list — no introduction, no explanation, no headers.
+- Do NOT write anything before or after the numbered list.
+
+Correct format:
+1. Question one about "${concept}"?
+2. Question two about "${concept}"?
+3. Question three about "${concept}"?
+
+Now write exactly ${n} questions about "${concept}" at the ${bloomLevel} Bloom level:`;
 
   try {
-    const raw = await generateText(prompt, { temperature: 0.5, numPredict: 800 });
+    const raw = await generateText(prompt, { temperature: 0.4, numPredict: 800 });
     console.log(`[bloomService] Raw Ollama output for ${bloomLevel}:\n${raw.slice(0, 400)}`);
 
     const questions = [];
@@ -77,20 +98,39 @@ Now write ${n} questions about "${concept}" at the ${bloomLevel} level:`;
       if (questions.length >= n) break;
     }
 
-    // Fallback: if numbered parser found nothing, take non-empty lines
+    // Fallback: if numbered parser found nothing, take lines that contain the concept words
     if (questions.length === 0) {
       for (const line of raw.split('\n')) {
         const t = line.trim().replace(/\*\*/g, '');
-        if (t.length > 20 && !t.startsWith('#') && !t.toLowerCase().startsWith('here')) {
-          questions.push({
-            question:   t.endsWith('?') ? t : t + '?',
-            bloomLevel,
-            concept,
-            difficulty: questions.length === 0 ? 'beginner'
-                      : questions.length === 1 ? 'intermediate' : 'advanced',
-          });
+        if (t.length > 20 && !t.startsWith('#') && !t.toLowerCase().startsWith('here') && !t.toLowerCase().startsWith('note')) {
+          // Only accept lines that contain at least one concept keyword (topic-relevance guard)
+          const tLower = t.toLowerCase();
+          const isOnTopic = conceptWords.length === 0 || conceptWords.some(w => tLower.includes(w));
+          if (isOnTopic) {
+            questions.push({
+              question:   t.endsWith('?') ? t : t + '?',
+              bloomLevel,
+              concept,
+              difficulty: questions.length === 0 ? 'beginner'
+                        : questions.length === 1 ? 'intermediate' : 'advanced',
+            });
+          }
         }
         if (questions.length >= n) break;
+      }
+    }
+
+    // If still nothing, generate a guaranteed on-topic fallback question
+    if (questions.length === 0) {
+      console.warn(`[bloomService] Ollama produced off-topic output for "${concept}" — using fallback questions`);
+      for (let i = 0; i < n; i++) {
+        const verb = (verbs.split(',')[i] || 'Explain').trim();
+        questions.push({
+          question:   `${verb} the concept of "${concept}" in the context of ${parentTopic || 'this subject'}?`,
+          bloomLevel,
+          concept,
+          difficulty: i === 0 ? 'beginner' : i === 1 ? 'intermediate' : 'advanced',
+        });
       }
     }
 
@@ -105,16 +145,21 @@ Now write ${n} questions about "${concept}" at the ${bloomLevel} level:`;
 /* ═══════════════════════════════════════════════════════════════════════
    1b. GENERATE MCQ (OBJECTIVE) QUESTIONS
 ═══════════════════════════════════════════════════════════════════════ */
-const generateMCQQuestions = async (concept, bloomLevel, parentTopic = '', n = 3) => {
+const generateMCQQuestions = async (concept, bloomLevel, parentTopic = '', n = 3, ragContext = '') => {
   const descriptor = BLOOM_DESCRIPTORS[bloomLevel] || bloomLevel;
   const context    = parentTopic ? `Subject area: "${parentTopic}".` : '';
+  const docSection = ragContext
+    ? `\nUse the following source material as the basis for your questions:\n\"\"\"\n${ragContext}\n\"\"\"\n`
+    : '';
 
   // Use a simple line-based format — far more reliable than JSON from Ollama
-  const prompt = `You are a university professor. ${context}
-Write exactly ${n} multiple-choice questions about "${concept}" at Bloom's level: ${bloomLevel} (${descriptor}).
+  const prompt = `You are a university professor. ${context}${docSection}
+Write EXACTLY ${n} multiple-choice questions about the topic "${concept}" at Bloom's level: ${bloomLevel} (${descriptor}).
+
+CRITICAL: Every question MUST be specifically about "${concept}". Do NOT ask about any other topic.
 
 Use this EXACT format for every question (copy the labels exactly):
-Q: [question text]
+Q: [question text about "${concept}"]
 A: [option A]
 B: [option B]
 C: [option C]
@@ -128,7 +173,7 @@ Rules:
 - Each question targets the ${bloomLevel} cognitive level.
 - No markdown, no numbering, no extra text.
 
-Write ${n} questions now:`;
+Write ${n} questions about "${concept}" now:`;
 
   try {
     const raw = await generateText(prompt, { temperature: 0.5, numPredict: 1400 });
@@ -171,6 +216,25 @@ Write ${n} questions now:`;
       if (mcqs.length >= n) break;
     }
 
+    // Fallback MCQs if Ollama produced nothing parseable
+    if (mcqs.length === 0) {
+      console.warn(`[bloomService] MCQ parser got no results for "${concept}" — using fallback`);
+      const verbs = BLOOM_VERBS[bloomLevel] || 'Explain';
+      const verb = verbs.split(',')[0].trim();
+      for (let i = 0; i < n; i++) {
+        mcqs.push({
+          question:    `${verb} the key characteristic of "${concept}"?`,
+          options:     { A: `Key aspect of ${concept}`, B: 'Unrelated concept', C: 'Incorrect definition', D: 'Partially correct' },
+          correct:     'A',
+          explanation: `Option A correctly describes a key aspect of ${concept}.`,
+          bloomLevel,
+          concept,
+          type:        'mcq',
+          difficulty:  i === 0 ? 'beginner' : i === 1 ? 'intermediate' : 'advanced',
+        });
+      }
+    }
+
     console.log(`[bloomService] Parsed ${mcqs.length} MCQ for [${bloomLevel}] "${concept}"`);
     return mcqs;
   } catch (err) {
@@ -183,10 +247,13 @@ Write ${n} questions now:`;
 /* ═══════════════════════════════════════════════════════════════════════
    2. EVALUATE BLOOM-LEVEL ANSWER
 ═══════════════════════════════════════════════════════════════════════ */
-const evaluateBloomAnswer = async (concept, question, studentAnswer, expectedBloomLevel) => {
+const evaluateBloomAnswer = async (concept, question, studentAnswer, expectedBloomLevel, ragContext = '') => {
   const descriptor = BLOOM_DESCRIPTORS[expectedBloomLevel] || expectedBloomLevel;
+  const docSection = ragContext
+    ? `\nSOURCE MATERIAL (use this to verify factual accuracy):\n\"\"\"\n${ragContext}\n\"\"\"\n`
+    : '';
 
-  const prompt = `You are a strict but fair university professor evaluating a student's answer.
+  const prompt = `You are a strict but fair university professor evaluating a student's answer.${docSection}
 
 Concept: "${concept}"
 Expected Bloom level: "${expectedBloomLevel}" (${descriptor})

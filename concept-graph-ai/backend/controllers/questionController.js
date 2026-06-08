@@ -1,5 +1,5 @@
 const { categorizeByType, categorizeByDifficulty } = require('../services/questionGenerationService');
-const ollamaService = require('../services/ollamaService');
+const ollamaService = require('../services/ollamaWorkerService');  // ★ runs in isolated subprocess
 
 /**
  * POST /api/questions

@@ -1,147 +1,124 @@
-const fs   = require('fs');
-const path = require('path');
-const pdfParse = require('pdf-parse');
-const Tesseract = require('tesseract.js');
+/**
+ * textExtractionService.js
+ *
+ * Thin orchestration layer — delegates all extraction work to a
+ * CHILD PROCESS (workers/extractWorker.js) via child_process.spawn().
+ *
+ * Why spawn() instead of fork()?
+ *   fork() uses an IPC channel. On Windows, when the child crashes with
+ *   a FATAL OOM error, the broken IPC channel can kill the parent too.
+ *   spawn() communicates via stdout (plain JSON line) — if the child
+ *   crashes, the pipe simply closes and we get a non-zero exit code.
+ *   Zero shared state, zero risk of cascading crash.
+ *
+ * Why a child process at all?
+ *   pdfjs-dist builds huge in-memory structures when parsing PDFs.
+ *   Even with page.cleanup() the process still grows over time because
+ *   Node/V8 may not return memory to the OS between requests.
+ *   Running in a child process guarantees that ALL memory is freed
+ *   by the OS on process exit — regardless of GC behaviour.
+ */
 
-let tesseractWorker = null;
+'use strict';
 
-/* ── Tesseract initialisation (singleton) ──────────────────────── */
-const initTesseract = async () => {
-  if (!tesseractWorker) {
-    console.log('🚀 Initializing Tesseract OCR engine...');
-    tesseractWorker = await Tesseract.createWorker('eng');
-    console.log('✅ Tesseract initialized successfully');
-  }
-  return tesseractWorker;
-};
+const { spawn } = require('child_process');
+const fs        = require('fs');
+const path      = require('path');
 
-/* ── OCR a single image buffer or file path ─────────────────────── */
-const ocrImage = async (input) => {
-  const worker = await initTesseract();
-  const result = await worker.recognize(input);
-  return result?.data?.text ?? '';
-};
+const WORKER_PATH    = path.join(__dirname, '../workers/extractWorker.js');
+const WORKER_TIMEOUT = 4 * 60 * 1000; // 4 minute hard ceiling
 
 /* ═══════════════════════════════════════════════════════════════════
-   PDF extraction — text-based first, OCR fallback via page images
+   runExtractionWorker
+   Spawns the worker, collects its stdout, parses one JSON line.
 ═══════════════════════════════════════════════════════════════════ */
-const extractTextFromPDF = async (filePath) => {
-  console.log(`📄 Extracting text from PDF: ${filePath}`);
-  const fileBuffer = fs.readFileSync(filePath);
+const runExtractionWorker = (filePath, mimeType) =>
+  new Promise((resolve, reject) => {
+    const arg = JSON.stringify({ filePath, mimeType });
 
-  // ── 1. Try text-based extraction ──────────────────────────────
-  let pdfData;
-  try {
-    pdfData = await pdfParse(fileBuffer);
-  } catch (e) {
-    console.warn('⚠️  pdf-parse failed:', e.message);
-    pdfData = { text: '', numpages: 1 };
-  }
+    // Give the worker its own 1.5 GB heap — completely isolated from the server.
+    // OCR is now one page at a time so peak usage is ~200-300 MB; 1536 is generous.
+    const child = spawn(
+      process.execPath, // same `node` binary
+      ['--max-old-space-size=1536', WORKER_PATH, arg],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'], // both stdout and stderr piped
+        windowsHide: true,
+      }
+    );
 
-  if (pdfData.text && pdfData.text.trim().length > 20) {
-    const pageCount = pdfData.info?.Pages ?? pdfData.numpages ?? 'unknown';
-    console.log(`✅ PDF text extracted: ${pdfData.text.length} chars from ${pageCount} pages`);
-    return {
-      success: true,
-      text: pdfData.text,
-      pages: pageCount,
-      metadata: {
-        title:    pdfData.info?.Title    || 'Unknown',
-        author:   pdfData.info?.Author   || 'Unknown',
-        producer: pdfData.info?.Producer || 'Unknown',
-      },
+    let stdout   = '';
+    let settled  = false;
+    const MAX_STDOUT = 10 * 1024 * 1024; // 10 MB cap (extracted text shouldn't exceed this)
+
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
     };
-  }
 
-  // ── 2. Scanned PDF — convert pages to PNG images, then OCR ────
-  console.log('⚠️  PDF has no embedded text — converting pages to images for OCR...');
-  try {
-    const path               = require('path');
-    const { pathToFileURL }  = require('url');
-    const { pdfToPng }       = require('pdf-to-png-converter');
+    const abort = (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { child.kill('SIGKILL'); } catch {}
+      reject(err);
+    };
 
-    // pdfjs-dist requires a proper file:// URL (with forward slashes + trailing slash)
-    // pathToFileURL handles Windows backslashes correctly: C:\...\cmaps → file:///C:/.../cmaps
-    const pdfJsDistDir = path.dirname(require.resolve('pdfjs-dist/package.json'));
-    const cMapsDir     = path.join(pdfJsDistDir, 'cmaps');
-    const cMapUrl      = pathToFileURL(cMapsDir).href + '/';
+    const timer = setTimeout(
+      () => abort(new Error(`Extraction worker timed out after ${WORKER_TIMEOUT / 1000}s`)),
+      WORKER_TIMEOUT
+    );
 
-    const pages = await pdfToPng(filePath, {
-      disableFontFace: true,
-      useSystemFonts:  true,
-      viewportScale:   2.0,
-      cMapUrl,
-      cMapPacked:      true,
+    // Forward worker stderr (pdfjs/tesseract logs) to server's terminal
+    child.stderr.on('data', (chunk) => process.stderr.write(chunk));
+
+    child.stdout.on('data', (chunk) => {
+      if (stdout.length < MAX_STDOUT) {
+        stdout += chunk.toString();
+      } else {
+        abort(new Error('Extraction worker stdout exceeded 10 MB safety cap'));
+      }
     });
 
+    child.stdout.on('end', () => {
+      if (settled) return;
+      const line = stdout.trim().split('\n').pop(); // last JSON line
+      if (!line) return abort(new Error('Worker produced no output'));
+      try {
+        const msg = JSON.parse(line);
+        if (msg.success) {
+          done(msg);
+        } else {
+          abort(new Error(msg.error || 'Worker reported failure'));
+        }
+      } catch {
+        abort(new Error(`Worker output is not valid JSON: ${line.slice(0, 200)}`));
+      }
+    });
 
-    if (!pages || pages.length === 0) {
-      throw new Error('pdf-to-png-converter returned no pages');
-    }
+    child.on('error', (err) => abort(new Error(`Failed to start worker: ${err.message}`)));
 
-    console.log(`🖼️  Converted ${pages.length} page(s) to images — running OCR...`);
-
-    const textParts = [];
-    for (let i = 0; i < pages.length; i++) {
-      const pageText = await ocrImage(pages[i].content); // content = Buffer
-      console.log(`   Page ${i + 1}: ${pageText.trim().length} chars`);
-      if (pageText.trim()) textParts.push(pageText);
-    }
-
-    const combined = textParts.join('\n\n').trim();
-    if (!combined) {
-      throw new Error('OCR returned no text from any page. The PDF may be empty or encrypted.');
-    }
-
-    console.log(`✅ OCR complete: ${combined.length} total chars from ${pages.length} page(s)`);
-    return {
-      success: true,
-      text: combined,
-      pages: pages.length,
-      ocrFallback: true,
-      metadata: { title: 'Scanned PDF (OCR)', author: 'Unknown', producer: 'Unknown' },
-    };
-  } catch (ocrErr) {
-    console.error('❌ PDF OCR error:', ocrErr.message);
-    throw new Error(
-      `This PDF appears to be scanned (image-only). OCR failed: ${ocrErr.message}. ` +
-      `Please try uploading a photo/screenshot of the document instead.`
-    );
-  }
-};
+    child.on('exit', (code, signal) => {
+      if (!settled && code !== 0) {
+        abort(new Error(
+          code === null
+            ? `Worker was killed (signal=${signal}) — likely ran out of memory`
+            : `Worker exited with code ${code}`
+        ));
+      }
+    });
+  });
 
 /* ═══════════════════════════════════════════════════════════════════
-   Image extraction via Tesseract
+   Public API
 ═══════════════════════════════════════════════════════════════════ */
-const extractTextFromImage = async (filePath) => {
-  console.log(`🖼️  Extracting text from image via OCR: ${filePath}`);
-  try {
-    const text = await ocrImage(filePath);
-    if (!text || !text.trim()) {
-      return { success: true, text: '[No readable text found in image]', confidence: 0 };
-    }
-    console.log(`✅ Image OCR complete: ${text.length} chars`);
-    return { success: true, text };
-  } catch (err) {
-    console.error('❌ Image OCR error:', err.message);
-    throw new Error(`Image OCR failed: ${err.message}`);
-  }
-};
 
-/* ═══════════════════════════════════════════════════════════════════
-   Plain text file extraction
-═══════════════════════════════════════════════════════════════════ */
-const extractTextFromPlainText = async (filePath) => {
-  console.log(`📝 Reading text file: ${filePath}`);
-  const text = fs.readFileSync(filePath, 'utf-8');
-  if (!text || !text.trim()) throw new Error('File contains no text');
-  console.log(`✅ Text file read: ${text.length} chars`);
-  return { success: true, text };
-};
-
-/* ═══════════════════════════════════════════════════════════════════
-   Main dispatcher
-═══════════════════════════════════════════════════════════════════ */
+/**
+ * extractText(filePath, mimeType)
+ * Returns { success, text, pages?, ocrFallback? }
+ */
 const extractText = async (filePath, mimeType) => {
   if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`);
@@ -150,38 +127,23 @@ const extractText = async (filePath, mimeType) => {
   console.log(`\n📥 Starting extraction`);
   console.log(`   Path: ${filePath}`);
   console.log(`   Type: ${mimeType}`);
+  console.log(`   Spawning isolated extraction worker…`);
 
-  if (mimeType === 'application/pdf') {
-    return extractTextFromPDF(filePath);
-  }
+  const result = await runExtractionWorker(filePath, mimeType);
 
-  const imageTypes = ['image/jpeg','image/png','image/jpg','image/webp','image/gif','image/bmp'];
-  if (imageTypes.includes(mimeType)) {
-    return extractTextFromImage(filePath);
-  }
+  const label = result.ocrFallback ? 'OCR extraction' : 'Extraction';
+  const extra = result.pages ? ` from ${result.pages} pages` : '';
+  console.log(`✅ ${label} complete: ${result.text.length} chars${extra}`);
 
-  const textTypes = ['text/plain','text/txt','application/txt','text/html'];
-  if (textTypes.includes(mimeType)) {
-    return extractTextFromPlainText(filePath);
-  }
-
-  throw new Error(
-    `Unsupported file type: ${mimeType}. Supported: PDF, JPEG, PNG, GIF, BMP, WebP, TXT`
-  );
+  return result;
 };
 
-/* ── Cleanup ────────────────────────────────────────────────────── */
-const cleanupTesseract = async () => {
-  if (tesseractWorker) {
-    try {
-      await tesseractWorker.terminate();
-      tesseractWorker = null;
-      console.log('✅ Tesseract worker terminated');
-    } catch (err) {
-      console.error('❌ Tesseract cleanup error:', err.message);
-    }
-  }
-};
+/* Backwards-compat stubs */
+const extractTextFromPDF       = (fp) => extractText(fp, 'application/pdf');
+const extractTextFromImage     = (fp) => extractText(fp, 'image/jpeg');
+const extractTextFromPlainText = (fp) => extractText(fp, 'text/plain');
+const cleanupTesseract         = async () => { /* noop — worker self-cleans */ };
+const initTesseract            = async () => { /* noop — worker self-inits  */ };
 
 module.exports = {
   extractText,

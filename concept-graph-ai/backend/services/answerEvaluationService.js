@@ -3,7 +3,9 @@
  * Uses Google Gemini for deep answer evaluation.
  */
 
-const ollamaService = require('./ollamaService');
+// ⚠️  Use ollamaWorkerService (spawns isolated subprocess) NOT ollamaService directly.
+// Direct calls buffer the full LLM response in the server's 2 GB heap and crash it.
+const ollamaService = require('./ollamaWorkerService');
 
 /**
  * Evaluate a student's answer with Ollama.

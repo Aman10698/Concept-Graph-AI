@@ -1,28 +1,54 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 
-/* ── layout constants ── */
-const ROOT_W = 210, ROOT_H = 84
+/* ─── Layout constants ───────────────────────────────────── */
+const ROOT_H_MIN = 52
+const ROOT_H_2L  = 70
+const ROOT_FONT  = 'bold 14px Inter,sans-serif'
+const ROOT_PAD_X = 24
 const TOPIC_W = 165, TOPIC_H = 88
-const SUB_W   = 148, SUB_H   = 64
-const H_GAP1  = 72   // root → topics
-const H_GAP2  = 48   // topics → subtopics
-const V_GAP   = 12   // between sibling subtopics
-const COL_GAP = 28   // horizontal gap between topic columns
-const PAD     = 56   // canvas padding
-const MIN_SCALE = 0.08, MAX_SCALE = 4
-const CANVAS_H  = 680
+const SUB_W   = 148, SUB_H   = 62
+const H_GAP1  = 68    // root → topics
+const H_GAP2  = 44    // topics → first subtopic
+const V_GAP   = 10    // between sibling subtopics
+const COL_GAP = 24    // horizontal gap between topic columns
+const PAD     = 52
+const MIN_SCALE = 0.05, MAX_SCALE = 4
+const CANVAS_H  = 800
 
-/* ── colour helpers ── */
+/* ─── Measure root node size ─────────────────────────────── */
+let _measureCtx = null
+const measureRootNode = (title) => {
+  if (!_measureCtx) {
+    const c = document.createElement('canvas')
+    _measureCtx = c.getContext('2d')
+  }
+  _measureCtx.font = ROOT_FONT
+  const words  = (title || 'Course').split(' ')
+  const maxW   = 300, minW = 160
+  const singleW = _measureCtx.measureText(title).width + ROOT_PAD_X * 2
+  if (singleW <= maxW) return { w: Math.max(minW, Math.ceil(singleW)), h: ROOT_H_MIN }
+  let bestW = maxW
+  for (let i = 1; i < words.length; i++) {
+    const w = Math.max(
+      _measureCtx.measureText(words.slice(0, i).join(' ')).width,
+      _measureCtx.measureText(words.slice(i).join(' ')).width
+    ) + ROOT_PAD_X * 2
+    if (w < bestW) bestW = w
+  }
+  return { w: Math.max(minW, Math.ceil(bestW)), h: ROOT_H_2L }
+}
+
+/* ─── Rating helpers ─────────────────────────────────────── */
 const ratingColor = r =>
-  r === 'strong' ? '#22c55e'
+  r === 'strong'  ? '#22c55e'
   : r === 'partial' || r === 'moderate' ? '#f59e0b'
-  : r === 'weak' ? '#ef4444'
+  : r === 'weak'  ? '#ef4444'
   : '#6366f1'
 
 const ratingLabel = r =>
-  r === 'strong' ? 'Strong'
+  r === 'strong'  ? 'Strong'
   : r === 'partial' || r === 'moderate' ? 'Partial'
-  : r === 'weak' ? 'Weak'
+  : r === 'weak'  ? 'Weak'
   : 'Not Practiced'
 
 const aggregateRating = arr => {
@@ -33,15 +59,60 @@ const aggregateRating = arr => {
   return 'partial'
 }
 
-/* ── build world-space layout ── */
-function buildLayout(topics, evalData) {
-  const cols = topics.map(t => ({
-    name: typeof t === 'string' ? t : t.name,
-    desc: typeof t === 'object' ? (t.description || '') : '',
-    subs: typeof t === 'object' && Array.isArray(t.subtopics)
-      ? t.subtopics.map(s => typeof s === 'string' ? s : (s.name || '')).filter(Boolean)
-      : [],
-  }))
+/* ─── Recursively flatten ALL descendants into a name list ── */
+const _normName = s =>
+  (s || '').replace(/^\s*[\d]+([\.][\d]*)?\.*\s*/, '').toLowerCase().replace(/\s+/g, ' ').trim()
+
+function flattenDescendants(subtopics) {
+  if (!Array.isArray(subtopics)) return []
+  const result = []
+  for (const s of subtopics) {
+    const name = typeof s === 'string' ? s : (s?.name || '')
+    if (!name) continue
+    result.push(name)
+    if (typeof s === 'object' && Array.isArray(s.subtopics) && s.subtopics.length > 0) {
+      result.push(...flattenDescendants(s.subtopics))
+    }
+  }
+  return result
+}
+
+/* ─── Build column data from raw topics ──────────────────── */
+function buildColumns(rawTopics, evalData) {
+  const seen = new Map()
+  for (const t of rawTopics) {
+    const name = typeof t === 'string' ? t : (t?.name || '')
+    const key  = _normName(name)
+    if (!key) continue
+    const subs = typeof t === 'object' && Array.isArray(t.subtopics) ? t.subtopics : []
+    if (seen.has(key)) {
+      // merge
+      seen.get(key).descendants.push(...flattenDescendants(subs))
+    } else {
+      seen.set(key, { name, descendants: flattenDescendants(subs) })
+    }
+  }
+
+  // Deduplicate descendants globally
+  const globalSeen = new Set()
+  return Array.from(seen.values()).map(col => {
+    const deduped = col.descendants.filter(d => {
+      const k = _normName(d)
+      if (!k || globalSeen.has(k)) return false
+      globalSeen.add(k)
+      return true
+    })
+    const subRatings  = deduped.map(d => evalData?.[d]?.rating)
+    const allTested   = deduped.length > 0 && subRatings.every(r => r != null)
+    const rating      = evalData?.[col.name]?.rating ?? (allTested ? aggregateRating(subRatings) : undefined)
+    return { name: col.name, descendants: deduped, rating }
+  }).filter(col => col.descendants.length > 0)
+}
+
+/* ─── Build world-space layout ───────────────────────────── */
+function buildLayout(topics, evalData, courseTitle) {
+  const cols = buildColumns(topics, evalData)
+  const { w: ROOT_W, h: ROOT_H } = measureRootNode(courseTitle || '')
 
   const colW   = Math.max(SUB_W, TOPIC_W) + COL_GAP
   const totalW = cols.length * colW - COL_GAP + PAD * 2
@@ -53,38 +124,34 @@ function buildLayout(topics, evalData) {
 
   const topicY = rootY + ROOT_H + H_GAP1
   cols.forEach((col, ci) => {
-    // Parent topic colour rules:
-    //  1. If the topic node itself was directly quizzed → use its own rating
-    //  2. Else if ALL subtopics have been tested → aggregate their ratings
-    //  3. Else → undefined (indigo "Not Practiced")
-    const subRatings = col.subs.map(s => evalData?.[s]?.rating)
-    const allSubsTested = col.subs.length > 0 && subRatings.every(r => r != null)
-    const rating = evalData?.[col.name]?.rating
-      ?? (allSubsTested ? aggregateRating(subRatings) : undefined)
     const cx = PAD + ci * colW + (colW - COL_GAP) / 2
-    const tX = cx - TOPIC_W / 2
     nodes.push({
-      id: `t${ci}`, kind: 'topic', name: col.name, desc: col.desc,
-      x: tX, y: topicY, w: TOPIC_W, h: TOPIC_H,
-      rating, parent: '__root__', subs: col.subs,
+      id: `t${ci}`, kind: 'topic', name: col.name,
+      x: cx - TOPIC_W / 2, y: topicY, w: TOPIC_W, h: TOPIC_H,
+      rating: col.rating, parent: '__root__',
     })
+
     const subY0 = topicY + TOPIC_H + H_GAP2
-    col.subs.forEach((sName, si) => {
+    col.descendants.forEach((dName, si) => {
       nodes.push({
-        id: `s${ci}_${si}`, kind: 'subtopic', name: sName, desc: '',
-        x: cx - SUB_W / 2, y: subY0 + si * (SUB_H + V_GAP), w: SUB_W, h: SUB_H,
-        rating: evalData?.[sName]?.rating,   // only use its OWN rating — never inherit parent's
-        parent: `t${ci}`,
+        id: `s${ci}_${si}`, kind: 'subtopic', name: dName,
+        x: cx - SUB_W / 2,
+        y: subY0 + si * (SUB_H + V_GAP),
+        w: SUB_W, h: SUB_H,
+        rating: evalData?.[dName]?.rating,
+        // Chain: each subtopic's parent is the previous one (creates sequential arrow chain)
+        parent: si === 0 ? `t${ci}` : `s${ci}_${si - 1}`,
+        topicId: `t${ci}`,
       })
     })
   })
 
-  const maxSubs = Math.max(...cols.map(c => c.subs.length), 0)
-  const totalH  = topicY + TOPIC_H + H_GAP2 + maxSubs * (SUB_H + V_GAP) + PAD
+  const maxDesc = Math.max(...cols.map(c => c.descendants.length), 0)
+  const totalH  = topicY + TOPIC_H + H_GAP2 + maxDesc * (SUB_H + V_GAP) + PAD
   return { nodes, totalW, totalH }
 }
 
-/* ── canvas helpers ── */
+/* ─── Canvas primitives ──────────────────────────────────── */
 function rrect(ctx, x, y, w, h, r) {
   if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); return }
   ctx.beginPath()
@@ -97,7 +164,7 @@ function rrect(ctx, x, y, w, h, r) {
 }
 
 function wrapText(ctx, text, x, y, maxW, lineH, maxLines = 2) {
-  const words = text.split(' ')
+  const words = (text || '').split(' ')
   let line = '', lines = []
   for (const word of words) {
     const t = line ? line + ' ' + word : word
@@ -111,27 +178,27 @@ function wrapText(ctx, text, x, y, maxW, lineH, maxLines = 2) {
   return y + lines.length * lineH
 }
 
-function drawBezierArrow(ctx, x1, y1, x2, y2, color) {
+function drawArrow(ctx, x1, y1, x2, y2, col) {
   const my = (y1 + y2) / 2
   ctx.beginPath()
   ctx.moveTo(x1, y1)
-  ctx.bezierCurveTo(x1, my, x2, my, x2, y2 - 6)
-  ctx.strokeStyle = color + 'bb'; ctx.lineWidth = 1.8; ctx.stroke()
+  ctx.bezierCurveTo(x1, my, x2, my, x2, y2 - 7)
+  ctx.strokeStyle = col + 'aa'; ctx.lineWidth = 1.6; ctx.stroke()
+  // arrowhead
   ctx.beginPath()
   ctx.moveTo(x2, y2)
   ctx.lineTo(x2 - 5, y2 - 9); ctx.lineTo(x2 + 5, y2 - 9)
-  ctx.closePath(); ctx.fillStyle = color + 'bb'; ctx.fill()
+  ctx.closePath(); ctx.fillStyle = col + 'aa'; ctx.fill()
 }
 
 function drawCard(ctx, node, isHov, courseTitle) {
   const { x, y, w, h, kind, name, rating } = node
-  const col   = ratingColor(rating)
-  const R = 12
+  const col = ratingColor(rating)
+  const R   = 12
 
-  /* shadow */
-  ctx.shadowColor   = isHov ? col + '55' : 'rgba(0,0,0,0.10)'
-  ctx.shadowBlur    = isHov ? 22 : 10
-  ctx.shadowOffsetY = isHov ? 5 : 3
+  ctx.shadowColor   = isHov ? col + '55' : 'rgba(0,0,0,0.09)'
+  ctx.shadowBlur    = isHov ? 20 : 9
+  ctx.shadowOffsetY = isHov ? 5  : 3
 
   if (kind === 'root') {
     const g = ctx.createLinearGradient(x, y, x + w, y + h)
@@ -140,30 +207,49 @@ function drawCard(ctx, node, isHov, courseTitle) {
     ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
     rrect(ctx, x, y, w, h, R)
     ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1.5; ctx.stroke()
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 14px Inter,sans-serif'
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-    ctx.fillText(courseTitle || 'Course', x + w / 2, y + h / 2)
+
+    ctx.fillStyle = '#fff'; ctx.font = ROOT_FONT
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'
+    const title  = courseTitle || 'Course'
+    const maxTW  = w - ROOT_PAD_X * 2
+    const words  = title.split(' ')
+    const lines  = []; let cur = ''
+    for (const word of words) {
+      const t = cur ? cur + ' ' + word : word
+      if (ctx.measureText(t).width > maxTW && cur) { lines.push(cur); cur = word }
+      else cur = t
+      if (lines.length >= 2) break
+    }
+    if (cur) lines.push(cur)
+    const lineH = 18
+    let ty = y + (h - lines.length * lineH) / 2
+    for (const l of lines) { ctx.fillText(l, x + w / 2, ty); ty += lineH }
+
   } else {
-    /* white card */
+    // topic or subtopic card
     rrect(ctx, x, y, w, h, R); ctx.fillStyle = '#fff'; ctx.fill()
     ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
-    /* top colour bar */
+
+    // top colour bar
     ctx.save(); rrect(ctx, x, y, w, h, R); ctx.clip()
     ctx.fillStyle = col; ctx.fillRect(x, y, w, 4); ctx.restore()
-    /* border */
+
+    // border
     rrect(ctx, x, y, w, h, R)
     ctx.strokeStyle = col + (isHov ? 'cc' : '44')
     ctx.lineWidth = isHov ? 2 : 1.5; ctx.stroke()
 
-    const pad = 10
-    let curY = y + 14
-    /* name */
-    ctx.fillStyle = '#1e293b'
-    ctx.font = `bold ${kind === 'topic' ? 12 : 11}px Inter,sans-serif`
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top'
-    curY = wrapText(ctx, name, x + pad, curY, w - pad * 2, kind === 'topic' ? 15 : 13, 2) + 4
+    const pad  = 10
+    let curY   = y + 14
+    const fs   = kind === 'topic' ? 12 : 11
+    const lh   = fs + 3
 
-    /* rating badge */
+    ctx.fillStyle = '#1e293b'
+    ctx.font = `bold ${fs}px Inter,sans-serif`
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+    curY = wrapText(ctx, name, x + pad, curY, w - pad * 2, lh, 2) + 4
+
+    // badge
     const label = ratingLabel(rating)
     ctx.font = 'bold 8px Inter,sans-serif'
     const bw = ctx.measureText(label).width + 12, bh = 14, br = 7
@@ -174,7 +260,6 @@ function drawCard(ctx, node, isHov, courseTitle) {
     ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
     ctx.fillText(label, x + pad + bw / 2, curY + bh / 2)
 
-    /* hover hint */
     if (isHov) {
       ctx.font = '8px Inter,sans-serif'
       ctx.fillStyle = col; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'
@@ -184,20 +269,21 @@ function drawCard(ctx, node, isHov, courseTitle) {
   ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
 }
 
-/* ══════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════
    COMPONENT
-══════════════════════════════════════════════════════════════ */
-export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = '', onSelectTopic, onSelectSubtopic, onCardClick }) {
+══════════════════════════════════════════════════════════ */
+export default function QuizMindMap({
+  topics = [], evalData = {}, courseTitle = '',
+  onSelectTopic, onSelectSubtopic, onCardClick,
+}) {
   const wrapRef   = useRef(null)
   const canvasRef = useRef(null)
   const nodesRef  = useRef([])
   const vpRef     = useRef({ ox: 0, oy: 0, scale: 1 })
-  const dragRef   = useRef(null)
-  const [hovered,   setHovered]   = useState(null)
-  const [width,     setWidth]     = useState(0)
-  const [vpVer,     setVpVer]     = useState(0)
+  const [hovered, setHovered] = useState(null)
+  const [width,   setWidth]   = useState(0)
+  const [vpVer,   setVpVer]   = useState(0)
 
-  /* observe width */
   useEffect(() => {
     const el = wrapRef.current; if (!el) return
     const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width || el.offsetWidth))
@@ -205,11 +291,10 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
     return () => ro.disconnect()
   }, [])
 
-  /* fit-to-view */
   const fitView = useCallback(() => {
     const vw = wrapRef.current?.offsetWidth || width
     const vh = CANVAS_H
-    const { nodes } = buildLayout(topics, evalData)
+    const { nodes } = buildLayout(topics, evalData, courseTitle)
     if (!nodes.length) return
     const xs = nodes.map(n => [n.x, n.x + n.w]).flat()
     const ys = nodes.map(n => [n.y, n.y + n.h]).flat()
@@ -224,7 +309,7 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
     }
     setVpVer(v => v + 1)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [width, topics])
+  }, [width, topics, courseTitle])
 
   /* DRAW */
   useEffect(() => {
@@ -234,10 +319,12 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
     const dpr = window.devicePixelRatio || 1
     const W   = Math.max(width, 300)
     const H   = CANVAS_H
-    canvas.width  = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
-    canvas.style.width = W + 'px'; canvas.style.height = H + 'px'
+    canvas.width  = Math.round(W * dpr)
+    canvas.height = Math.round(H * dpr)
+    canvas.style.width  = W + 'px'
+    canvas.style.height = H + 'px'
 
-    const { nodes } = buildLayout(topics, evalData)
+    const { nodes } = buildLayout(topics, evalData, courseTitle)
     nodesRef.current = nodes
 
     const { ox, oy, scale } = vpRef.current
@@ -247,15 +334,13 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
     ctx.translate(ox, oy)
     ctx.scale(scale, scale)
 
-    /* PASS 1 — arrows */
     const byId = Object.fromEntries(nodes.map(n => [n.id, n]))
+
+    /* PASS 1 — arrows */
     nodes.filter(n => n.parent).forEach(n => {
-      const p  = byId[n.parent]; if (!p) return
+      const p = byId[n.parent]; if (!p) return
       const col = ratingColor(n.rating)
-      drawBezierArrow(ctx,
-        p.x + p.w / 2, p.y + p.h,
-        n.x + n.w / 2, n.y,
-        col)
+      drawArrow(ctx, p.x + p.w / 2, p.y + p.h, n.x + n.w / 2, n.y, col)
     })
 
     /* PASS 2 — cards */
@@ -264,7 +349,6 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
     ctx.restore()
   }, [topics, evalData, courseTitle, hovered, width, vpVer])
 
-  /* fit on first load */
   useEffect(() => {
     if (width > 0 && topics.length) {
       const id = setTimeout(fitView, 120)
@@ -273,17 +357,16 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topics, width])
 
-  /* ── Scroll-to-zoom — ONLY fires when mouse is over the canvas ── */
+  /* wheel zoom */
   useEffect(() => {
     const el = canvasRef.current; if (!el) return
-    const onWheel = (e) => {
-      e.preventDefault()   // blocks page scroll + browser zoom ONLY while over canvas
-      const rect   = el.getBoundingClientRect()
+    const onWheel = e => {
+      e.preventDefault()
+      const rect = el.getBoundingClientRect()
       const { ox, oy, scale } = vpRef.current
       const factor = e.deltaY < 0 ? 1.06 : 1 / 1.06
-      const ns  = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor))
-      const mx  = e.clientX - rect.left
-      const my  = e.clientY - rect.top
+      const ns = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor))
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top
       vpRef.current = {
         scale: ns,
         ox: mx - (mx - ox) * (ns / scale),
@@ -293,9 +376,9 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [])   // canvas ref never changes, so [] is fine
+  }, [])
 
-  /* hit test (screen → world) */
+  /* hit test */
   const hitNode = useCallback((cx, cy) => {
     const canvas = canvasRef.current; if (!canvas) return null
     const rect = canvas.getBoundingClientRect()
@@ -309,7 +392,7 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
     return null
   }, [])
 
-  /* global drag / click */
+  /* drag + click */
   useEffect(() => {
     let dragging = false, moved = false
     let startX = 0, startY = 0, startOx = 0, startOy = 0
@@ -321,7 +404,6 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
       startOx = vpRef.current.ox; startOy = vpRef.current.oy
       if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing'
     }
-
     const onMove = e => {
       if (!dragging) {
         const n = hitNode(e.clientX, e.clientY)
@@ -337,18 +419,17 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
         if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing'
       }
     }
-
     const onUp = e => {
       if (!dragging) return
       dragging = false
       if (!moved) {
         const n = hitNode(e.clientX, e.clientY)
-        if (n) {
-          const parentNode = nodesRef.current.find(p => p.id === n.parent)
-          const parentName = parentNode?.name || courseTitle
-          if (onCardClick) {
-            onCardClick(n.name, parentName)
-          }
+        if (n && onCardClick) {
+          const byId = Object.fromEntries(nodesRef.current.map(x => [x.id, x]))
+          // Find parent topic (kind === 'topic') for context
+          const topicNode = n.kind === 'topic' ? n : (n.topicId ? byId[n.topicId] : null)
+          const parentName = topicNode?.name || courseTitle
+          onCardClick(n.name, parentName)
         }
       }
       if (canvasRef.current) canvasRef.current.style.cursor = 'grab'
@@ -364,7 +445,7 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
       window.removeEventListener('mouseup',   onUp)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hitNode, onSelectTopic, onSelectSubtopic])
+  }, [hitNode, onCardClick, courseTitle])
 
   /* toolbar zoom */
   const zoom = factor => {
@@ -388,10 +469,11 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
 
       {/* Toolbar */}
       <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <button style={btnSt()} title="Zoom in"     onClick={() => zoom(1.12)}>＋</button>
-        <button style={btnSt()} title="Zoom out"    onClick={() => zoom(1 / 1.12)}>－</button>
+        <button style={btnSt()} title="Zoom in"  onClick={() => zoom(1.12)}>＋</button>
+        <button style={btnSt()} title="Zoom out" onClick={() => zoom(1 / 1.12)}>－</button>
         <button style={btnSt({ fontSize: '0.72rem', fontWeight: 700 })} title="Fit view" onClick={fitView}>⊡</button>
-        <button style={btnSt({ fontSize: '0.65rem', fontWeight: 700 })} title="Reset"    onClick={() => { vpRef.current = { ox: 0, oy: 0, scale: 1 }; setVpVer(v => v + 1) }}>1:1</button>
+        <button style={btnSt({ fontSize: '0.65rem', fontWeight: 700 })} title="Reset"
+          onClick={() => { vpRef.current = { ox: 0, oy: 0, scale: 1 }; setVpVer(v => v + 1) }}>1:1</button>
       </div>
 
       {/* Hint */}
@@ -399,7 +481,8 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
         position: 'absolute', bottom: 46, left: '50%', transform: 'translateX(-50%)',
         background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(6px)',
         border: '1px solid rgba(99,102,241,0.12)', borderRadius: 999,
-        padding: '4px 14px', fontSize: '0.68rem', color: '#6b7280', pointerEvents: 'none', whiteSpace: 'nowrap',
+        padding: '4px 14px', fontSize: '0.68rem', color: '#6b7280',
+        pointerEvents: 'none', whiteSpace: 'nowrap',
       }}>
         Scroll to zoom · Drag to pan · Click a card to quiz
       </div>
@@ -422,7 +505,6 @@ export default function QuizMindMap({ topics = [], evalData = {}, courseTitle = 
           </div>
         ))}
       </div>
-
     </div>
   )
 }

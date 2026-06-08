@@ -4,8 +4,6 @@ import {
   setDoc,
   getDoc,
   getDocs,
-  updateDoc,
-  deleteDoc,
   query,
   where,
   serverTimestamp,
@@ -353,7 +351,7 @@ export const exportUserData = async (userId) => {
   }
 };
 
-export default {
+const databaseService = {
   // Graph operations
   saveGraphData,
   getGraphData,
@@ -371,3 +369,4 @@ export default {
   createUserDataBackup,
   exportUserData,
 };
+export default databaseService;

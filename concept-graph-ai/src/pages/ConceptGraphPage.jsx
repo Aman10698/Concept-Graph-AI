@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import FileUpload from '../components/FileUpload';
 import { extractTextFromFile } from '../services/textExtractionService';
 import { useTextExtraction } from '../hooks/useTextExtraction';
 import { useTopicExtraction } from '../hooks/useTopicExtraction';
 import { useErrorHandler } from '../hooks/useErrorHandler';
-import { useGraph } from '../hooks/useGraph';
+
 import { useQuestionGeneration } from '../hooks/useQuestionGeneration';
 import { useDependencyAnalysis } from '../hooks/useDependencyAnalysis';
 import { useWeaknessAnalysis } from '../hooks/useWeaknessAnalysis';
 import { useAuth } from '../context/AuthContext';
 import MindMapViewer from '../components/MindMapViewer';
-import GraphViewer from '../components/GraphViewer';
 // eslint-disable-next-line no-unused-vars
 import QuestionsDisplay from '../components/QuestionsDisplay';
 import QuestionPractice from '../components/QuestionPractice';
@@ -20,9 +20,9 @@ import DependencyViewer from '../components/DependencyViewer';
 import DependencyGraph from '../components/DependencyGraph';
 import ErrorDisplay from '../components/ErrorDisplay';
 import BloomPanel from '../components/BloomPanel';
-import KnowledgeGraphView from '../components/KnowledgeGraphView';
-import '../pages/KnowledgeGraphPage.css';
-import { persistGraphData } from '../services/dataPersistence';
+import RootCauseGraph from '../components/RootCauseGraph';
+
+// persistGraphData removed — graph data is persisted via the session flow (MongoDB)
 import { persistSessionData, persistEvaluation } from '../services/mongoProgressService';
 import {
   createSession,
@@ -30,21 +30,23 @@ import {
   saveSessionEvaluation,
   getActiveSessionId,
 } from '../services/sessionService';
+import { setEvalStorage } from '../utils/evalBus';
+
 
 /* ─── wizard step definitions ─────────────────────────────────── */
 const STEPS = [
-  { id: 'upload',   label: 'Upload',             desc: 'Upload your syllabus PDF or image' },
-  { id: 'topics',   label: 'Topics',             desc: 'AI breaks it into topics & subtopics' },
-  { id: 'mindmap',  label: 'Mind Map',           desc: 'Click any node to quiz that topic' },
+  { id: 'upload', label: 'Upload', desc: 'Upload your syllabus PDF or image' },
+  { id: 'topics', label: 'Topics', desc: 'AI breaks it into topics & subtopics' },
+  { id: 'mindmap', label: 'Mind Map', desc: 'Click any node to quiz that topic' },
   { id: 'depgraph', label: 'Prerequisite Graph', desc: 'AI shows which prerequisites you are missing per topic' },
 ];
 
 /* ─── progress sidebar step item ─────────────────────────────── */
 const StepItem = ({ step, index, status, isCurrent, onClick, canClick }) => {
   const colors = {
-    done:    { bg: '#22c55e', text: '#fff', border: '#22c55e', labelColor: '#166534' },
-    active:  { bg: '#6366f1', text: '#fff', border: '#6366f1', labelColor: '#0f172a' },
-    locked:  { bg: '#f1f5f9', text: '#9ca3af', border: '#e2e8f0', labelColor: '#9ca3af' },
+    done: { bg: '#22c55e', text: '#fff', border: '#22c55e', labelColor: '#166534' },
+    active: { bg: '#6366f1', text: '#fff', border: '#6366f1', labelColor: '#0f172a' },
+    locked: { bg: '#f1f5f9', text: '#9ca3af', border: '#e2e8f0', labelColor: '#9ca3af' },
   };
   const c = colors[status];
 
@@ -105,13 +107,13 @@ const ProcessingCard = ({ icon, title, subtitle }) => (
 
 /* ─── section header ──────────────────────────────────────────── */
 const SectionHeader = ({ title, subtitle, action }) => (
-    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-      <div>
-        <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 2 }}>{title}</h2>
-        {subtitle && <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{subtitle}</p>}
-      </div>
-      {action}
+  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+    <div>
+      <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 2 }}>{title}</h2>
+      {subtitle && <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{subtitle}</p>}
     </div>
+    {action}
+  </div>
 );
 
 /* ─── results summary ─────────────────────────────────────────── */
@@ -120,16 +122,16 @@ const ResultsSummary = ({ topicsData, evaluationData, onGoToRootCause }) => {
   const topics = topicsData?.topics ?? [];
   const getName = t => (typeof t === 'string' ? t : t.name);
 
-  const rated  = topics.map(t => ({ name: getName(t), rating: evaluationData[getName(t)]?.rating }));
+  const rated = topics.map(t => ({ name: getName(t), rating: evaluationData[getName(t)]?.rating }));
   const strong = rated.filter(r => r.rating === 'strong');
   const partial = rated.filter(r => r.rating === 'partial' || r.rating === 'moderate');
-  const weak   = rated.filter(r => r.rating === 'weak');
+  const weak = rated.filter(r => r.rating === 'weak');
   const unrated = rated.filter(r => !r.rating);
 
   const RATING_STYLE = {
-    strong:  { bg: 'rgba(34,197,94,0.08)',  border: '#22c55e', color: '#166534', badge: 't-badge-green'  },
-    partial: { bg: 'rgba(245,158,11,0.08)', border: '#f59e0b', color: '#92400e', badge: 't-badge-amber'  },
-    weak:    { bg: 'rgba(239,68,68,0.08)',   border: '#ef4444', color: '#991b1b', badge: 't-badge-red'    },
+    strong: { bg: 'rgba(34,197,94,0.08)', border: '#22c55e', color: '#166534', badge: 't-badge-green' },
+    partial: { bg: 'rgba(245,158,11,0.08)', border: '#f59e0b', color: '#92400e', badge: 't-badge-amber' },
+    weak: { bg: 'rgba(239,68,68,0.08)', border: '#ef4444', color: '#991b1b', badge: 't-badge-red' },
   };
 
   return (
@@ -137,10 +139,10 @@ const ResultsSummary = ({ topicsData, evaluationData, onGoToRootCause }) => {
       {/* summary pills */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
         {[
-  { label: 'Strong',   count: strong.length,  color: '#22c55e', bg: 'rgba(34,197,94,0.08)'   },
-          { label: 'Partial',  count: partial.length, color: '#f59e0b', bg: 'rgba(245,158,11,0.08)'  },
-          { label: 'Weak',     count: weak.length,    color: '#ef4444', bg: 'rgba(239,68,68,0.08)'   },
-          { label: 'Not tried',count: unrated.length, color: '#9ca3af', bg: 'rgba(156,163,175,0.08)' },
+          { label: 'Strong', count: strong.length, color: '#22c55e', bg: 'rgba(34,197,94,0.08)' },
+          { label: 'Partial', count: partial.length, color: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
+          { label: 'Weak', count: weak.length, color: '#ef4444', bg: 'rgba(239,68,68,0.08)' },
+          { label: 'Not tried', count: unrated.length, color: '#9ca3af', bg: 'rgba(156,163,175,0.08)' },
         ].map(s => (
           <div key={s.label} style={{
             flex: 1, minWidth: 90, borderRadius: 12, padding: '14px 16px',
@@ -157,7 +159,7 @@ const ResultsSummary = ({ topicsData, evaluationData, onGoToRootCause }) => {
       {[
         { key: 'strong', list: strong, label: 'Strong Topics' },
         { key: 'partial', list: partial, label: 'Needs Review' },
-        { key: 'weak',   list: weak,   label: 'Weak Topics' },
+        { key: 'weak', list: weak, label: 'Weak Topics' },
       ].filter(g => g.list.length > 0).map(({ key, list, label }) => {
         const s = RATING_STYLE[key];
         return (
@@ -195,23 +197,29 @@ const ResultsSummary = ({ topicsData, evaluationData, onGoToRootCause }) => {
 ═══════════════════════════════════════════════════════════════ */
 const ConceptGraphPage = () => {
   // ── wizard state ──
-  const [wizardStep, setWizardStep]       = useState('upload');
+  const [wizardStep, setWizardStep] = useState('upload');
   const [completedSteps, setCompletedSteps] = useState(new Set());
 
   // ── data state ──
   const [extractedText, setExtractedText] = useState('');
-  const [topicsData, setTopicsData]       = useState(null);
+  const [topicsData, setTopicsData] = useState(null);
   const [evaluationData, setEvaluationData] = useState({});
   const [topicDepGraphs, setTopicDepGraphs] = useState(() => {
-    // Rehydrate from localStorage on mount
-    try { return JSON.parse(localStorage.getItem('topicDepGraphs') || '{}'); }
-    catch { return {}; }
+    // Prefer the per-session scoped key; fall back to the global key for backwards compat
+    try {
+      const sessionId = localStorage.getItem('activeSessionId');
+      if (sessionId) {
+        const perSession = localStorage.getItem(`topicDepGraphs_${sessionId}`);
+        if (perSession) return JSON.parse(perSession);
+      }
+      return JSON.parse(localStorage.getItem('topicDepGraphs') || '{}');
+    } catch { return {}; }
   });
   const [selectedDepTopic, setSelectedDepTopic] = useState(null);
   const [selectedWeakTopic, setSelectedWeakTopic] = useState(null);
-  const [practiceTopicId, setPracticeTopicId]     = useState(null);
-  const [activeSessionId, setActiveSessionId]     = useState(() => getActiveSessionId());
-  const [processing, setProcessing]       = useState(null);
+  const [practiceTopicId, setPracticeTopicId] = useState(null);
+  const [activeSessionId, setActiveSessionId] = useState(() => getActiveSessionId());
+  const [processing, setProcessing] = useState(null);
 
   // ── on-demand question generation (when node clicked) ──
   const [onDemandQuestions, setOnDemandQuestions] = useState([]);
@@ -221,18 +229,17 @@ const ConceptGraphPage = () => {
   // ── Bloom's modal (mind map node click) ──
   const [bloomTopic, setBloomTopic] = useState(null); // { name, parent }
 
-  // ── mind-map sub-tab ──
-  const [mapTab, setMapTab] = useState('mindmap');
+
 
   // ── hooks ──
-  const textExtraction    = useTextExtraction();
-  const topicExtraction   = useTopicExtraction();
-  const errorHandler      = useErrorHandler();
-  const graph             = useGraph();
+  const textExtraction = useTextExtraction();
+  const topicExtraction = useTopicExtraction();
+  const errorHandler = useErrorHandler();
+
   const questionGeneration = useQuestionGeneration();
   const dependencyAnalysis = useDependencyAnalysis();
-  const weaknessAnalysis  = useWeaknessAnalysis();
-  const { user }          = useAuth();
+  const weaknessAnalysis = useWeaknessAnalysis();
+  const { user } = useAuth();
 
   /* ── mark a step done and auto-advance ── */
   const completeStep = (stepId) => {
@@ -240,33 +247,62 @@ const ConceptGraphPage = () => {
   };
 
   const canAccess = (stepId) => {
-    const idx      = STEPS.findIndex(s => s.id === stepId);
-    const prevId   = idx > 0 ? STEPS[idx - 1].id : null;
+    const idx = STEPS.findIndex(s => s.id === stepId);
+    const prevId = idx > 0 ? STEPS[idx - 1].id : null;
     return idx === 0 || completedSteps.has(prevId);
   };
 
   const stepStatus = (stepId) => {
     if (completedSteps.has(stepId)) return 'done';
-    if (wizardStep === stepId)       return 'active';
+    if (wizardStep === stepId) return 'active';
     return 'locked';
   };
 
-  /* ── file upload handler ── */
+  /* ── file upload handler ──
+     The /api/upload endpoint already extracts text from the file and returns it
+     in response.data.extraction.extractedText — we use it directly here instead
+     of making a second /api/extract call that was causing the "Network Error". */
   const handleFileUpload = async (responseData) => {
     const fileInfo = responseData.file || responseData;
+    // Text is already extracted by the upload controller
+    const extractedTextFromUpload = responseData.extraction?.extractedText || '';
+
+    // ── Clear ALL stale data from the previous session immediately ──
+    // This prevents old dep-graph / evaluation data bleeding into the new upload.
+    [
+      'learningTopicsData', 'learningQuestionsData',
+      'learningEvaluationData', 'learningDependencyData',
+    ].forEach(k => localStorage.removeItem(k));
+    setTopicsData(null);
+    setEvaluationData({});
+    setSelectedDepTopic(null);
+    setSelectedWeakTopic(null);
+    dependencyAnalysis.clearDependencies?.();
+    questionGeneration.clearQuestions?.();
+    weaknessAnalysis.clearWeaknessData?.();
+
     completeStep('upload');
-    setProcessing('extracting');
     setWizardStep('topics');
 
     try {
-      const extractResponse = await extractTextFromFile(fileInfo.filename, fileInfo.mimetype);
-      const extractionData  = extractResponse.data || extractResponse;
+      let text = extractedTextFromUpload;
 
-      if (extractionData?.text) {
-        setExtractedText(extractionData.text);
+      // If for some reason the upload didn't include text (old file), fall back to /api/extract
+      if (!text || text.trim().length < 20) {
+        setProcessing('extracting');
+        try {
+          const extractResponse = await extractTextFromFile(fileInfo.filename, fileInfo.mimetype);
+          text = extractResponse?.data?.text || extractResponse?.text || '';
+        } catch (extErr) {
+          console.warn('Fallback extraction failed:', extErr.message);
+        }
+      }
+
+      if (text && text.trim().length >= 20) {
+        setExtractedText(text);
         setProcessing('topics');
 
-        const topicsResult = await topicExtraction.extract(extractionData.text);
+        const topicsResult = await topicExtraction.extract(text);
         if (topicsResult) {
           setTopicsData(topicsResult);
           completeStep('topics');
@@ -275,44 +311,44 @@ const ConceptGraphPage = () => {
 
           // ── Create a new MongoDB session for this syllabus ──
           if (user) {
-            // Use the extracted subject/topic name as the session title
-            // Fall back to a cleaned filename (strip extension + timestamp junk)
-            const rawName  = fileInfo.originalname || fileInfo.filename || ''
-            const cleaned  = rawName.replace(/\.[^.]+$/, '').replace(/-\d{10,}-\d+$/, '').replace(/[-_]/g, ' ').trim()
+            const rawName = fileInfo.originalname || fileInfo.filename || '';
+            const cleaned = rawName
+              .replace(/\.[^.]+$/, '')
+              .replace(/-\d{10,}-\d+$/, '')
+              .replace(/[-_]/g, ' ')
+              .trim();
             const sid = await createSession(user.uid, {
-              title:        topicsResult.subject || topicsResult.topics?.[0]?.name || cleaned || 'Uploaded Syllabus',
-              subject:      topicsResult.subject || '',
-              extractedText: extractionData.text,
-              topicsData:   topicsResult,
+              title: topicsResult.subject || topicsResult.topics?.[0]?.name || cleaned || 'Uploaded Syllabus',
+              subject: topicsResult.subject || '',
+              extractedText: text,
+              topicsData: topicsResult,
             });
             if (sid) setActiveSessionId(sid);
           }
         } else {
-          errorHandler.handleError({ message: topicExtraction.error || 'Failed to extract topics' });
+          errorHandler.handleError({ message: topicExtraction.error || 'Failed to extract topics — is Ollama running?' });
           setProcessing(null);
         }
       } else {
-        errorHandler.handleError({ message: 'Failed to extract text from the file' });
+        errorHandler.handleError({ message: 'Could not extract text from the file. Try a different PDF or image.' });
         setProcessing(null);
       }
     } catch (err) {
-      errorHandler.handleError({ message: err.message || 'Extraction failed' });
+      errorHandler.handleError({ message: err.message || 'Something went wrong during processing' });
       setProcessing(null);
     }
   };
 
-  /* ── build graph when topics arrive (questions generated on-demand via BloomPanel) ── */
+
+  /* ── build dependency graph when topics arrive ── */
   useEffect(() => {
-    if (topicsData?.topics) {
-      graph.convertTopicsToGraph(topicsData.topics, topicsData.subject || '');
-      if (topicsData.topics.length > 0) {
-        dependencyAnalysis.analyze(topicsData.topics, extractedText).then((depData) => {
-          if (activeSessionId && depData)
-            updateSessionData(activeSessionId, { dependencyData: depData });
-        });
-      }
+    if (topicsData?.topics && topicsData.topics.length > 0) {
+      dependencyAnalysis.analyze(topicsData.topics, extractedText).then((depData) => {
+        if (activeSessionId && depData)
+          updateSessionData(activeSessionId, { dependencyData: depData });
+      });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicsData]);
 
   /* ── auto-complete mindmap step when user reaches it ── */
@@ -323,7 +359,11 @@ const ConceptGraphPage = () => {
   }, [wizardStep, topicsData]);
 
   /* ── BOOTSTRAP: restore session data from localStorage on mount ── */
+  const location = useLocation();
   useEffect(() => {
+    // If navigated here with ?fresh=1 (e.g. from "Upload New"), stay on the upload screen
+    if (new URLSearchParams(location.search).get('fresh') === '1') return;
+
     const raw = localStorage.getItem('learningTopicsData');
     if (!raw) return;  // no previous data — stay on upload screen
     try {
@@ -336,7 +376,7 @@ const ConceptGraphPage = () => {
       // Restore evaluation data
       const evalRaw = localStorage.getItem('learningEvaluationData');
       if (evalRaw) {
-        try { setEvaluationData(JSON.parse(evalRaw)); } catch (_) {}
+        try { setEvaluationData(JSON.parse(evalRaw)); } catch (_) { }
       }
 
       // Restore extracted text (needed for on-demand question gen)
@@ -347,8 +387,8 @@ const ConceptGraphPage = () => {
     } catch (err) {
       console.warn('[ConceptGraphPage] Failed to restore session from localStorage:', err);
     }
-  // Run only once on mount
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Run only once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ── persist topics to localStorage + MongoDB ── */
@@ -377,10 +417,8 @@ const ConceptGraphPage = () => {
     }
   }, [dependencyAnalysis.dependencies, user]);
 
-  useEffect(() => {
-    if (topicsData && user && extractedText)
-      persistGraphData(user.uid, topicsData, extractedText).catch(err => console.error(err));
-  }, [topicsData, user, extractedText]);
+  // Graph data is persisted via the session flow (createSession + updateSessionData → MongoDB).
+  // The old persistGraphData call was silently routing to Firebase (unconfigured) and losing data.
 
   /* ── On-demand question generation when a node is clicked ── */
   useEffect(() => {
@@ -431,21 +469,24 @@ const ConceptGraphPage = () => {
       .catch(err => console.error('On-demand question fetch failed:', err))
       .finally(() => setFetchingQuestions(false));
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [practiceTopicId, questionFetchKey]);
 
   /* ── handle evaluation update ── */
   const handleEvalUpdate = (ev) => {
+    // Stamp each entry with the current time so Recent Activity shows real timestamps
+    const now = Date.now()
+    const stamped = Object.fromEntries(
+      Object.entries(ev).map(([k, v]) => [k, { ...v, practicedAt: v.practicedAt ?? now }])
+    )
     setEvaluationData(prev => {
-      const merged = { ...prev, ...ev };
-      // 1. localStorage
-      localStorage.setItem('learningEvaluationData', JSON.stringify(merged));
-      // Notify Dashboard in the same tab
-      window.dispatchEvent(new StorageEvent('storage', { key: 'learningEvaluationData' }));
+      const merged = { ...prev, ...stamped };
+      // Use setEvalStorage so Dashboard, DependencyGraphPage, etc. all update in the same tab
+      setEvalStorage('learningEvaluationData', JSON.stringify(merged));
       // 2. MongoDB progress (legacy)
       if (user) persistEvaluation(user.uid, merged);
       // 3. Session-level evaluation (per-syllabus progress)
-      if (activeSessionId) saveSessionEvaluation(activeSessionId, ev);
+      if (activeSessionId) saveSessionEvaluation(activeSessionId, stamped);
       return merged;
     });
     if (Object.keys(ev).length > 0) completeStep('practice');
@@ -457,10 +498,11 @@ const ConceptGraphPage = () => {
     setPracticeTopicId(null); // return to topic grid, NOT to depgraph
   };
 
-  /* ── go to root cause TAB (from practice / study plan) ── */
+  /* ── go to root cause (from practice / study plan) ── */
   const handleGoToRootCause = async (topic) => {
     setSelectedWeakTopic(topic);
-    setWizardStep('rootcause');
+    // Stay on depgraph tab and show inline weakness trace — rootcause is not a wizard step
+    setWizardStep('depgraph');
     completeStep('depgraph');
     if (topicsData?.topics)
       await weaknessAnalysis.traceWeakness(topic, topicsData.topics, evaluationData);
@@ -481,6 +523,12 @@ const ConceptGraphPage = () => {
 
   /* ── reset ── */
   const handleReset = () => {
+    // Clear all cached learning data from localStorage
+    [
+      'activeSessionId', 'learningTopicsData', 'learningQuestionsData',
+      'learningEvaluationData', 'learningDependencyData',
+    ].forEach(k => localStorage.removeItem(k));
+
     setWizardStep('upload');
     setCompletedSteps(new Set());
     setExtractedText('');
@@ -533,7 +581,7 @@ const ConceptGraphPage = () => {
 
   const renderTopics = () => {
     if (processing === 'extracting') return <ProcessingCard title="Reading your document" subtitle="Extracting text from the uploaded file" />;
-    if (processing === 'topics')     return <ProcessingCard title="AI is analysing topics" subtitle="Breaking down your syllabus into concepts and subtopics" />;
+    if (processing === 'topics') return <ProcessingCard title="AI is analysing topics" subtitle="Breaking down your syllabus into concepts and subtopics" />;
 
     const topics = topicsData?.topics ?? [];
     return (
@@ -549,8 +597,8 @@ const ConceptGraphPage = () => {
         />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {topics.map((t, i) => {
-            const name     = typeof t === 'string' ? t : t.name;
-            const subs     = typeof t === 'string' ? [] : (t.subtopics ?? []);
+            const name = typeof t === 'string' ? t : t.name;
+            const subs = typeof t === 'string' ? [] : (t.subtopics ?? []);
             return (
               <div key={i} className="t-card" style={{ padding: '14px 18px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: subs.length ? 10 : 0 }}>
@@ -580,16 +628,16 @@ const ConceptGraphPage = () => {
   };
 
   const renderMindMap = () => {
-    const allQ    = questionGeneration.questionsData?.questions ?? [];
+    const allQ = questionGeneration.questionsData?.questions ?? [];
     const getName = t => (typeof t === 'string' ? t : t.name);
 
     // \u2500\u2500 QUIZ VIEW when a node has been clicked \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     if (practiceTopicId) {
-      const ev        = evaluationData[practiceTopicId];
-      const rating    = ev?.rating;
-      const nodeColor = rating === 'strong'  ? '#22c55e'
-                      : rating === 'partial' || rating === 'moderate' ? '#f59e0b'
-                      : rating === 'weak'    ? '#ef4444' : '#9ca3af';
+      const ev = evaluationData[practiceTopicId];
+      const rating = ev?.rating;
+      const nodeColor = rating === 'strong' ? '#22c55e'
+        : rating === 'partial' || rating === 'moderate' ? '#f59e0b'
+          : rating === 'weak' ? '#ef4444' : '#9ca3af';
 
       return (
         <>
@@ -632,7 +680,7 @@ const ConceptGraphPage = () => {
               key={practiceTopicId}
               questionsData={{ questions: onDemandQuestions }}
               onEvaluationUpdate={handleEvalUpdate}
-              onWeakAnswerDetected={() => {}}
+              onWeakAnswerDetected={() => { }}
               onComplete={() => { completeStep('mindmap'); setPracticeTopicId(null); }}
             />
           ) : (
@@ -658,26 +706,9 @@ const ConceptGraphPage = () => {
           title="Concept Mind Map"
           subtitle="Click any topic or subtopic node to start a quiz on it"
         />
-        {/* sub-tab */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '2px solid rgba(99,102,241,0.1)', paddingBottom: -1 }}>
-          {[['mindmap','Mind Map'],['graph','Graph View']].map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setMapTab(key)}
-              style={{
-                padding: '9px 18px', border: 'none', background: 'none',
-                fontFamily: 'inherit', fontWeight: 600, fontSize: '0.875rem',
-                cursor: 'pointer', marginBottom: -2,
-                borderBottom: `2px solid ${mapTab === key ? '#6366f1' : 'transparent'}`,
-                color: mapTab === key ? '#6366f1' : 'var(--text-muted)',
-                transition: 'color 0.18s, border-color 0.18s',
-              }}
-            >{label}</button>
-          ))}
-        </div>
-        {mapTab === 'mindmap' && topicsData && (
+        {topicsData && (
           <MindMapViewer
-            key={JSON.stringify(Object.keys(evaluationData).map(k => evaluationData[k]?.rating))}
+            key="mindmap"
             topics={topicsData.topics}
             subject={topicsData.subject || ''}
             evaluationData={evaluationData}
@@ -702,28 +733,20 @@ const ConceptGraphPage = () => {
             }}
           />
         )}
-        {mapTab === 'graph' && graph.graph && (
-          <GraphViewer
-            graph={graph.graph}
-            stats={graph.stats}
-            evaluationData={evaluationData}
-            onExport={(fmt) => { if (fmt === 'json') graph.exportAsJSON(); else graph.exportAsCSV(); }}
-          />
-        )}
       </>
     );
   };
 
   const renderPractice = () => {
-    const topics    = topicsData?.topics ?? [];
-    const getName   = t => (typeof t === 'string' ? t : t.name);
-    const allQ      = questionGeneration.questionsData?.questions ?? [];
+    const topics = topicsData?.topics ?? [];
+    const getName = t => (typeof t === 'string' ? t : t.name);
+    const allQ = questionGeneration.questionsData?.questions ?? [];
 
     // ── TOPIC GRID (no topic selected) ─────────────────────────
     if (!practiceTopicId) {
-      const totalTopics  = topics.length;
+      const totalTopics = topics.length;
       const masteredCount = topics.filter(t => evaluationData[getName(t)]?.rating === 'strong').length;
-      const allGreen     = masteredCount === totalTopics && totalTopics > 0;
+      const allGreen = masteredCount === totalTopics && totalTopics > 0;
 
       return (
         <>
@@ -774,21 +797,21 @@ const ConceptGraphPage = () => {
           {/* Topic grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 14 }}>
             {topics.map(t => {
-              const name    = getName(t);
-              const ev      = evaluationData[name];
-              const rating  = ev?.rating;
-              const score   = ev?.score ?? ev?.confidence ?? null;
-              const qCount  = allQ.filter(q => q.topic === name || q.parentTopic === name).length;
+              const name = getName(t);
+              const ev = evaluationData[name];
+              const rating = ev?.rating;
+              const score = ev?.score ?? ev?.confidence ?? null;
+              const qCount = allQ.filter(q => q.topic === name || q.parentTopic === name).length;
 
-              const nodeColor = rating === 'strong'  ? '#22c55e'
-                              : rating === 'partial' || rating === 'moderate' ? '#f59e0b'
-                              : rating === 'weak'    ? '#ef4444'
-                              : '#9ca3af';
+              const nodeColor = rating === 'strong' ? '#22c55e'
+                : rating === 'partial' || rating === 'moderate' ? '#f59e0b'
+                  : rating === 'weak' ? '#ef4444'
+                    : '#9ca3af';
 
-              const ratingLabel = rating === 'strong'  ? 'Mastered'
-                                : rating === 'partial' || rating === 'moderate' ? 'In Progress'
-                                : rating === 'weak'    ? 'Needs Work'
-                                : 'Not Started';
+              const ratingLabel = rating === 'strong' ? 'Mastered'
+                : rating === 'partial' || rating === 'moderate' ? 'In Progress'
+                  : rating === 'weak' ? 'Needs Work'
+                    : 'Not Started';
 
               const pct = rating === 'strong' ? 100 : rating === 'partial' || rating === 'moderate' ? 55 : rating === 'weak' ? 20 : 0;
 
@@ -849,11 +872,11 @@ const ConceptGraphPage = () => {
       q.topic === practiceTopicId || q.parentTopic === practiceTopicId
     );
 
-    const ev      = evaluationData[practiceTopicId];
-    const rating  = ev?.rating;
-    const nodeColor = rating === 'strong'  ? '#22c55e'
-                    : rating === 'partial' || rating === 'moderate' ? '#f59e0b'
-                    : rating === 'weak'    ? '#ef4444' : '#9ca3af';
+    const ev = evaluationData[practiceTopicId];
+    const rating = ev?.rating;
+    const nodeColor = rating === 'strong' ? '#22c55e'
+      : rating === 'partial' || rating === 'moderate' ? '#f59e0b'
+        : rating === 'weak' ? '#ef4444' : '#9ca3af';
 
     return (
       <>
@@ -910,7 +933,7 @@ const ConceptGraphPage = () => {
             key={practiceTopicId}  /* remount when topic changes to reset state */
             questionsData={{ ...questionGeneration.questionsData, questions: topicQuestions }}
             onEvaluationUpdate={handleEvalUpdate}
-            onWeakAnswerDetected={() => {}}
+            onWeakAnswerDetected={() => { }}
             onComplete={() => {
               completeStep('practice');
               setPracticeTopicId(null); // return to grid after finishing
@@ -938,35 +961,45 @@ const ConceptGraphPage = () => {
       <>
         <SectionHeader
           title="Prerequisite Graph"
-          subtitle="Select a topic you've quizzed to see its prerequisite dependency graph"
+          subtitle="AI-powered map of what you need to master — weak topics are highlighted automatically"
         />
 
-        {testedTopics.length === 0 ? (
-          <div style={{ padding: '40px 32px', textAlign: 'center', background: '#f8faff', borderRadius: 14, border: '1.5px solid #e2e8f0' }}>
-            <p style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a', marginBottom: 8 }}>No quiz results yet</p>
-            <p style={{ fontSize: '0.85rem', color: '#6b7280', maxWidth: 380, margin: '0 auto 20px' }}>
-              Click any node in the Mind Map to take a quiz. After completing it, come back here to see your prerequisite dependency graph.
-            </p>
-            <button onClick={() => setWizardStep('mindmap')} className="t-btn t-btn-primary t-btn-sm">
-              Go to Mind Map →
-            </button>
+        {/* ── Full course React Flow graph (always shown if topics exist) ── */}
+        {topicsData?.topics?.length > 0 && (
+          <div style={{ marginBottom: 24 }}>
+            <RootCauseGraph
+              key={`${topicsData.subject || 'session'}-${topicsData.topics.length}`}
+              topics={topicsData.topics}
+              evalData={evaluationData}
+              courseTitle={topicsData.subject || ''}
+              onPractice={(topicName) => {
+                setPracticeTopicId(topicName);
+                setWizardStep('mindmap');
+              }}
+            />
           </div>
-        ) : (
+        )}
+
+        {/* ── BloomPanel quiz results section ── */}
+        {testedTopics.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-            {/* ── Topic picker grid ── */}
+            {/* Topic picker grid */}
             <div className="t-card" style={{ padding: '20px 22px' }}>
               <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 14 }}>
-                Topics Tested — click to view prerequisite graph
+                Quiz Results — click to analyse weak topic in detail
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                 {testedTopics.map(([name, data]) => {
-                  const color   = ratingColor(data.rating);
-                  const isSel   = selectedDepTopic === name;
+                  const color = ratingColor(data.rating);
+                  const isSel = selectedDepTopic === name;
                   return (
                     <button
                       key={name}
-                      onClick={() => setSelectedDepTopic(isSel ? null : name)}
+                      onClick={() => {
+                        setSelectedDepTopic(isSel ? null : name);
+                        if (!isSel) handleGoToRootCause(name);
+                      }}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 8,
                         padding: '9px 16px', borderRadius: 10, fontFamily: 'inherit',
@@ -987,13 +1020,16 @@ const ConceptGraphPage = () => {
                       }}>
                         {data.score}%
                       </span>
+                      <span style={{ fontSize: '0.65rem', color: '#9ca3af' }}>
+                        {ratingLabel(data.rating)}
+                      </span>
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* dep graph for selected topic */}
+            {/* dep graph detail for selected topic */}
             {selectedDepTopic && selected && (
               <div className="t-card" style={{
                 padding: '22px 24px',
@@ -1003,15 +1039,17 @@ const ConceptGraphPage = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: ratingColor(selected.rating), flexShrink: 0 }} />
                   <p style={{ fontWeight: 800, fontSize: '1rem', color: '#0f172a' }}>{selectedDepTopic}</p>
-                  <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                  <span style={{
+                    fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
                     background: `${ratingColor(selected.rating)}20`, color: ratingColor(selected.rating),
-                    textTransform: 'uppercase' }}>{ratingLabel(selected.rating)}</span>
+                    textTransform: 'uppercase'
+                  }}>{ratingLabel(selected.rating)}</span>
                   <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#6366f1', marginLeft: 4 }}>{selected.score}%</span>
                 </div>
                 {selected.nodes && selected.nodes.length > 0 ? (
                   <div>
                     <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
-                      Prerequisite dependency graph — AI-generated from your quiz
+                      Prerequisite dependency graph — from your quiz
                     </p>
                     <DependencyGraph nodes={selected.nodes} />
                     {selected.improvements && selected.improvements.length > 0 && (
@@ -1031,84 +1069,41 @@ const ConceptGraphPage = () => {
                     <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>You demonstrated solid understanding of this topic.</p>
                   </div>
                 ) : (
-                  <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>No dependency data available for this topic yet.</p>
+                  <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>No dependency data yet — the AI graph above shows your full prerequisite map.</p>
                 )}
               </div>
             )}
 
+            {/* Inline weakness trace (shown when handleGoToRootCause is called) */}
+            {selectedWeakTopic && (
+              <div className="t-card" style={{ padding: '22px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                  <h3 style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.95rem' }}>
+                    Root Cause: <span style={{ color: '#ef4444' }}>"{selectedWeakTopic}"</span>
+                  </h3>
+                  <button onClick={() => setSelectedWeakTopic(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '1rem' }}>✕</button>
+                </div>
+                <WeaknessTraceViewer
+                  weaknessTrace={weaknessAnalysis.weaknessTrace}
+                  isLoading={weaknessAnalysis.isAnalyzing}
+                  error={weaknessAnalysis.error}
+                  onSelectConcept={() => {}}
+                />
+              </div>
+            )}
           </div>
         )}
-      </>
-    );
-  };
 
-
-
-  const renderRootCause = () => {
-    const topics = topicsData?.topics ?? [];
-    const getName = t => (typeof t === 'string' ? t : t.name);
-    const weakTopics = topics
-      .map(getName)
-      .filter(name => evaluationData[name]?.rating === 'weak');
-
-    return (
-      <>
-        <SectionHeader
-          title="Root Cause Analysis"
-          subtitle="Find which foundational concepts are causing gaps in your understanding"
-        />
-
-        {/* topic selector */}
-        <div className="t-card" style={{ padding: '18px 20px', marginBottom: 20 }}>
-          <p style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
-            Select a topic to analyse
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {topics.map((t) => {
-              const name   = getName(t);
-              const rating = evaluationData[name]?.rating;
-              const isWeak = rating === 'weak';
-              const isSel  = selectedWeakTopic === name;
-              return (
-                <button
-                  key={name}
-                  onClick={() => handleGoToRootCause(name)}
-                  style={{
-                    padding: '7px 14px', borderRadius: 8, fontWeight: 600,
-                    fontSize: '0.83rem', cursor: 'pointer', fontFamily: 'inherit',
-                    border: `2px solid ${isWeak ? '#fca5a5' : isSel ? '#818cf8' : '#e2e8f0'}`,
-                    background: isWeak ? '#fef2f2' : isSel ? '#eff6ff' : '#f8faff',
-                    color: isWeak ? '#991b1b' : isSel ? '#1d4ed8' : '#374151',
-                    outline: isSel ? '2px solid #6366f1' : 'none', outlineOffset: 2,
-                    transition: 'all 0.18s',
-                  }}
-                >
-                  {name}
-                </button>
-              );
-            })}
-          </div>
-          {weakTopics.length === 0 && (
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: 10 }}>
-              No weak topics found yet — complete practice first.
+        {/* Empty state when no quizzes taken */}
+        {testedTopics.length === 0 && !topicsData?.topics?.length && (
+          <div style={{ padding: '40px 32px', textAlign: 'center', background: '#f8faff', borderRadius: 14, border: '1.5px solid #e2e8f0' }}>
+            <p style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a', marginBottom: 8 }}>Upload a syllabus first</p>
+            <p style={{ fontSize: '0.85rem', color: '#6b7280', maxWidth: 380, margin: '0 auto 20px' }}>
+              Go to the Upload step, then come back here to see your prerequisite dependency graph.
             </p>
-          )}
-        </div>
-
-        {/* trace result */}
-        {selectedWeakTopic && (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <h3 style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '1rem' }}>
-                Analysing: <span style={{ color: '#ef4444' }}>"{selectedWeakTopic}"</span>
-              </h3>
-            </div>
-            <WeaknessTraceViewer
-              weaknessTrace={weaknessAnalysis.weaknessTrace}
-              isLoading={weaknessAnalysis.isAnalyzing}
-              error={weaknessAnalysis.error}
-              onSelectConcept={() => {}}
-            />
+            <button onClick={() => setWizardStep('upload')} className="t-btn t-btn-primary t-btn-sm">
+              Upload Syllabus →
+            </button>
           </div>
         )}
       </>
@@ -1116,70 +1111,22 @@ const ConceptGraphPage = () => {
   };
 
   /* ─── render active step content ───────────────────────────── */
+
   const CONTENT_MAP = {
     upload:   renderUpload,
     topics:   renderTopics,
     mindmap:  renderMindMap,
     practice: renderPractice,
     depgraph: renderDepGraph,
+    // rootcause is rendered INLINE inside depgraph tab — not a standalone wizard step
   };
 
   const activeContent = CONTENT_MAP[wizardStep]?.() ?? null;
-  const currentIdx    = STEPS.findIndex(s => s.id === wizardStep);
+  const currentIdx = STEPS.findIndex(s => s.id === wizardStep);
 
   /* ─── layout ────────────────────────────────────────────────── */
 
-  /* ── mindmap step: full-bleed KnowledgeGraphView with StreakPanel ── */
-  if (wizardStep === 'mindmap' && topicsData) {
-    return (
-      <>
-        <KnowledgeGraphView
-          topicsData={topicsData}
-          evaluationData={evaluationData}
-          onNodeClick={(name) => {
-            const topicObj = topicsData.topics.find(t =>
-              (typeof t === 'string' ? t : t.name) === name
-            );
-            const subs = topicObj?.subtopics
-              ? topicObj.subtopics.map(s => typeof s === 'string' ? s : s.name).filter(Boolean)
-              : [];
-            setBloomTopic({ name, parent: null, subtopics: subs });
-          }}
-          onReset={handleReset}
-          completedSteps={completedSteps}
-          wizardChildren={null}
-        />
 
-        {/* Bloom modal — overlay on top of the full-bleed KG view */}
-        {bloomTopic && (
-          <BloomPanel
-            concept={bloomTopic.name}
-            parentTopic={bloomTopic.parent}
-            subtopics={bloomTopic.subtopics || []}
-            onQuizComplete={({ concept, score, rating, nodes = [], improvements = [] }) => {
-              handleEvalUpdate({ [concept]: { score, rating } });
-              setTopicDepGraphs(prev => {
-                const updated = { ...prev, [concept]: { score, rating, nodes, improvements, testedAt: Date.now() } };
-                localStorage.setItem('topicDepGraphs', JSON.stringify(updated));
-                if (activeSessionId) updateSessionData(activeSessionId, { topicDepGraphs: updated });
-                return updated;
-              });
-            }}
-            onClose={() => {
-              setBloomTopic(null);
-              completeStep('mindmap');
-            }}
-          />
-        )}
-
-        {errorHandler.error && (
-          <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 200, minWidth: 340 }}>
-            <ErrorDisplay error={errorHandler.error} onDismiss={() => errorHandler.clearError()} onRetry={() => {}} />
-          </div>
-        )}
-      </>
-    );
-  }
 
   /* ── All other wizard steps: classic scrollable wizard layout ── */
   return (
@@ -1203,17 +1150,19 @@ const ConceptGraphPage = () => {
               const lastDoneIdx = STEPS.reduce((acc, s, i) => completedSteps.has(s.id) ? i : acc, -1);
               const visibleUpTo = Math.min(lastDoneIdx + 2, STEPS.length - 1);
               return STEPS.slice(0, visibleUpTo + 1).map((step, idx) => {
-                const status   = stepStatus(step.id);
+                const status = stepStatus(step.id);
                 const canClick = canAccess(step.id);
                 const isCurrent = wizardStep === step.id;
-                const isLast   = idx === visibleUpTo;
+                const isLast = idx === visibleUpTo;
                 return (
                   <React.Fragment key={step.id}>
                     <StepItem step={step} index={idx} status={status} isCurrent={isCurrent} canClick={canClick} onClick={goTo} />
                     {!isLast && (
-                      <div style={{ width: 2, height: 10, marginLeft: 31,
+                      <div style={{
+                        width: 2, height: 10, marginLeft: 31,
                         background: completedSteps.has(step.id) ? '#22c55e' : 'rgba(99,102,241,0.12)',
-                        borderRadius: 999, transition: 'background 0.3s' }} />
+                        borderRadius: 999, transition: 'background 0.3s'
+                      }} />
                     )}
                   </React.Fragment>
                 );
@@ -1232,9 +1181,11 @@ const ConceptGraphPage = () => {
         <div>
           {/* Step breadcrumb pill */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-            <span style={{ padding: '4px 14px', borderRadius: 999,
+            <span style={{
+              padding: '4px 14px', borderRadius: 999,
               background: 'linear-gradient(135deg, #7c3aed, #6366f1)',
-              color: '#fff', fontSize: '0.78rem', fontWeight: 700 }}>
+              color: '#fff', fontSize: '0.78rem', fontWeight: 700
+            }}>
               Step {currentIdx + 1} of {STEPS.length}
             </span>
             <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>
@@ -1248,22 +1199,24 @@ const ConceptGraphPage = () => {
 
           {/* Next step CTA — on mindmap only after quiz answered */}
           {completedSteps.has(wizardStep) &&
-           (wizardStep !== 'mindmap' || Object.keys(evaluationData).length > 0) &&
-           STEPS[currentIdx + 1] && (
-            <div style={{ marginTop: 14, padding: '12px 18px', borderRadius: 10,
-              background: 'rgba(34,197,94,0.06)', border: '1.5px solid rgba(34,197,94,0.2)',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ color: '#22c55e', fontSize: '1rem' }}>✓</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#166534' }}>
-                  {wizardStep === 'mindmap' ? 'Quiz complete! View your Prerequisite Graph.' : 'This step is complete!'}
-                </span>
+            (wizardStep !== 'mindmap' || Object.keys(evaluationData).length > 0) &&
+            STEPS[currentIdx + 1] && (
+              <div style={{
+                marginTop: 14, padding: '12px 18px', borderRadius: 10,
+                background: 'rgba(34,197,94,0.06)', border: '1.5px solid rgba(34,197,94,0.2)',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#22c55e', fontSize: '1rem' }}>✓</span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#166534' }}>
+                    {wizardStep === 'mindmap' ? 'Quiz complete! View your Prerequisite Graph.' : 'This step is complete!'}
+                  </span>
+                </div>
+                <button onClick={() => goTo(STEPS[currentIdx + 1]?.id)} className="t-btn t-btn-primary t-btn-sm">
+                  {wizardStep === 'mindmap' ? 'Prerequisite Graph' : STEPS[currentIdx + 1]?.label} →
+                </button>
               </div>
-              <button onClick={() => goTo(STEPS[currentIdx + 1]?.id)} className="t-btn t-btn-primary t-btn-sm">
-                {wizardStep === 'mindmap' ? 'Prerequisite Graph' : STEPS[currentIdx + 1]?.label} →
-              </button>
-            </div>
-          )}
+            )}
         </div>
       </div>
 
@@ -1286,7 +1239,11 @@ const ConceptGraphPage = () => {
             setTopicDepGraphs(prev => {
               const updated = { ...prev, [concept]: { score, rating, nodes, improvements, testedAt: Date.now() } };
               localStorage.setItem('topicDepGraphs', JSON.stringify(updated));
-              if (activeSessionId) updateSessionData(activeSessionId, { topicDepGraphs: updated });
+              // Also write session-scoped key so DepGraphPage can load per-syllabus data
+              if (activeSessionId) {
+                localStorage.setItem(`topicDepGraphs_${activeSessionId}`, JSON.stringify(updated));
+                updateSessionData(activeSessionId, { topicDepGraphs: updated });
+              }
               return updated;
             });
           }}

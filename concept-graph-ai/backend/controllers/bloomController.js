@@ -1,13 +1,17 @@
 const BloomProgress  = require('../models/BloomProgress');
 const {
   BLOOM_ORDER,
-  generateBloomQuestions,
-  generateMCQQuestions,
-  evaluateBloomAnswer,
   diagnoseBloomWeakness,
   generateBloomLearningPath,
   generateDependencyAnalysis,
 } = require('../services/bloomService');
+// Heavy Ollama calls run in isolated worker subprocesses
+const {
+  generateBloomQuestions,
+  generateMCQQuestions,
+  evaluateBloomAnswer,
+} = require('../services/ollamaWorkerService');
+const { retrieveContext } = require('../services/ragService');
 
 /* ── helper: get or create a bloom progress doc ── */
 async function getOrCreate(userId, concept, syllabusId) {
@@ -66,7 +70,7 @@ exports.getAllProgress = async (req, res) => {
 ═══════════════════════════════════════════════════════════════════ */
 exports.getQuestions = async (req, res) => {
   try {
-    const { userId, concept, bloomLevel, parentTopic, quizType = 'subjective', n = 3, subtopics } = req.body;
+    const { userId, concept, bloomLevel, parentTopic, quizType = 'subjective', n = 3, subtopics, syllabusId, ragDocumentId } = req.body;
     if (!userId || !concept || !bloomLevel)
       return res.status(400).json({ error: 'userId, concept, bloomLevel required' });
 
@@ -75,30 +79,33 @@ exports.getQuestions = async (req, res) => {
 
     const totalN = Number(n);
 
+    // ── Retrieve RAG context ──────────────────────────────────────────────────
+    const ragQuery  = [concept, parentTopic, bloomLevel].filter(Boolean).join(' ');
+    const ragContext = await retrieveContext(userId, syllabusId || '', ragQuery, 3, ragDocumentId || null);
+    if (ragContext) console.log(`📖 RAG context retrieved (${ragContext.length} chars) for "${concept}"`);
+
     // ── Module node: subtopics present → distribute questions across all sub-topics ──
     if (Array.isArray(subtopics) && subtopics.length > 0) {
       const perSub = Math.max(1, Math.round(totalN / subtopics.length));
 
-      // Generate questions for each subtopic in parallel, then merge
-      const allResults = await Promise.all(
-        subtopics.map(async (sub) => {
-          const subName = typeof sub === 'string' ? sub : (sub.name || String(sub));
-          const fn = quizType === 'objective' ? generateMCQQuestions : generateBloomQuestions;
-          const qs = await fn(subName, bloomLevel, concept /* parent context */, perSub);
-          return qs;
-        })
-      );
+      // ★ Sequential batching — avoids holding all Ollama responses in memory at once
+      const questions = [];
+      for (const sub of subtopics) {
+        const subName = typeof sub === 'string' ? sub : (sub.name || String(sub));
+        const fn = quizType === 'objective' ? generateMCQQuestions : generateBloomQuestions;
+        const qs = await fn(subName, bloomLevel, concept, perSub, ragContext);
+        questions.push(...qs);
+      }
 
-      const questions = allResults.flat();
-      return res.json({ success: true, questions, bloomLevel, concept, quizType });
+      return res.json({ success: true, questions, bloomLevel, concept, quizType, ragUsed: !!ragContext });
     }
 
     // ── Leaf node: no subtopics → generate for the concept itself ──
     const questions = quizType === 'objective'
-      ? await generateMCQQuestions(concept, bloomLevel, parentTopic || '', totalN)
-      : await generateBloomQuestions(concept, bloomLevel, parentTopic || '', totalN);
+      ? await generateMCQQuestions(concept, bloomLevel, parentTopic || '', totalN, ragContext)
+      : await generateBloomQuestions(concept, bloomLevel, parentTopic || '', totalN, ragContext);
 
-    res.json({ success: true, questions, bloomLevel, concept, quizType });
+    res.json({ success: true, questions, bloomLevel, concept, quizType, ragUsed: !!ragContext });
   } catch (err) {
     console.error('bloom.getQuestions:', err.message);
     res.status(500).json({ error: err.message });
@@ -112,12 +119,16 @@ exports.getQuestions = async (req, res) => {
 ═══════════════════════════════════════════════════════════════════ */
 exports.evaluate = async (req, res) => {
   try {
-    const { userId, concept, bloomLevel, question, answer, syllabusId } = req.body;
+    const { userId, concept, bloomLevel, question, answer, syllabusId, ragDocumentId } = req.body;
     if (!userId || !concept || !bloomLevel || !question || !answer)
       return res.status(400).json({ error: 'userId, concept, bloomLevel, question, answer required' });
 
-    // 1. Evaluate with Ollama
-    const result = await evaluateBloomAnswer(concept, question, answer, bloomLevel);
+    // ── Retrieve RAG context for evaluation grounding ─────────────────────────
+    const ragQuery   = [concept, question.slice(0, 120), bloomLevel].filter(Boolean).join(' ');
+    const ragContext = await retrieveContext(userId, syllabusId || '', ragQuery, 2, ragDocumentId || null);
+
+    // 1. Evaluate with Ollama (RAG-grounded)
+    const result = await evaluateBloomAnswer(concept, question, answer, bloomLevel, ragContext);
     if (!result) return res.status(500).json({ error: 'Evaluation failed' });
 
     // 2. Update BloomProgress doc

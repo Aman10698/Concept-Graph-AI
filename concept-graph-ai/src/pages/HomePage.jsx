@@ -87,7 +87,7 @@ export default function HomePage() {
                 <p className="text-gray-700 text-sm mb-6">Upload your course syllabus (PDF or image). The AI will extract topics and build your knowledge map.</p>
 
                 <button 
-                  onClick={() => navigate('/concept-graph')}
+                  onClick={() => navigate('/syllabuses')}
                   className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:shadow-lg text-white font-semibold py-3 rounded-lg transition-all flex items-center justify-center gap-2"
                 >
                   Upload Syllabus

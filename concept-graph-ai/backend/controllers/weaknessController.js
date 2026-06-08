@@ -2,7 +2,7 @@ const {
   traceDependencyWeakness,
   analyzeWeaknessPatterns,
 } = require('../services/weaknessAnalysisService');
-const ollamaService = require('../services/ollamaService');
+const ollamaService = require('../services/ollamaWorkerService');  // ★ runs in isolated subprocess
 
 /**
  * POST /api/trace-weakness
@@ -32,17 +32,22 @@ const traceWeaknessController = async (req, res) => {
       );
 
       if (aiAnalysis && aiAnalysis.prerequisites) {
-        // Also run rule-based for path data, merge with AI insights
-        const ruleResult = await traceDependencyWeakness(weakTopic, allTopics, evaluationData || {});
         result = {
-          ...ruleResult,
-          rootCause:             aiAnalysis.rootCause             || ruleResult.weakestConcept,
+          weakTopic,
+          weakestConcept:        (aiAnalysis.prerequisites || [])[0]?.concept || weakTopic,
+          rootCause:             aiAnalysis.rootCause             || weakTopic,
           prerequisites:         aiAnalysis.prerequisites         || [],
           studyPlan:             aiAnalysis.studyPlan             || [],
           estimatedRevisionTime: aiAnalysis.estimatedRevisionTime || 'Unknown',
           relatedWeakAreas:      aiAnalysis.relatedWeakAreas      || [],
-          aiAnalysis:            true,
-          source:                'gemini',
+          path: (aiAnalysis.prerequisites || []).map((p, i) => ({
+            level: i, topic: p.concept,
+            weaknessLevel: p.priority === 'high' ? 'critical' : p.priority === 'medium' ? 'moderate' : 'minor',
+            why: p.why,
+          })),
+          recommendations: [],
+          aiAnalysis: true,
+          source: 'gemini',
         };
         console.log(`✅ Gemini identified root cause: "${aiAnalysis.rootCause}"`);
       }

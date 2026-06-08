@@ -3,7 +3,9 @@
  * Uses Google Gemini for root-cause weakness analysis.
  */
 
-const ollamaService = require('./ollamaService');
+// ⚠️  Use ollamaWorkerService (spawns isolated subprocess) NOT ollamaService directly.
+// Direct calls run the LLM in the main 2 GB server heap causing OOM crashes.
+const ollamaService = require('./ollamaWorkerService');
 
 /**
  * Trace weakness for a single topic using Gemini.
@@ -76,9 +78,12 @@ const analyzeWeaknessPatterns = async (weakTopics, allTopics = [], evaluationDat
     };
   }
 
-  const traces = await Promise.all(
-    weakTopics.map(topic => traceDependencyWeakness(topic, allTopics, evaluationData))
-  );
+  // Sequential — spawning all workers at once via Promise.all would exhaust RAM.
+  // Each worker needs up to 3 GB; firing N simultaneously means N×3 GB simultaneously.
+  const traces = [];
+  for (const topic of weakTopics) {
+    traces.push(await traceDependencyWeakness(topic, allTopics, evaluationData));
+  }
 
   // Find shared root causes
   const rootFreq = {};

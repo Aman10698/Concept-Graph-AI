@@ -11,8 +11,9 @@ const DashboardPage = () => {
   const [timeRange, setTimeRange] = useState('all'); // all, week, month
   const [sortBy, setSortBy] = useState('weakness'); // weakness, name, confidence
 
-  // Load data from localStorage on mount
-  useEffect(() => {
+  // Load data from localStorage on mount + re-sync whenever evaluation changes
+  const syncFromStorage = React.useCallback(() => {
+    const activeSessionId = localStorage.getItem('activeSessionId');
     const LEARNING_KEYS = [
       'learningTopicsData',
       'learningQuestionsData',
@@ -20,9 +21,6 @@ const DashboardPage = () => {
       'learningDependencyData',
     ];
 
-    const activeSessionId = localStorage.getItem('activeSessionId');
-
-    // No active session → purge any stale data left by a previously deleted syllabus
     if (!activeSessionId) {
       LEARNING_KEYS.forEach(k => localStorage.removeItem(k));
       setTopicsData(null);
@@ -49,6 +47,28 @@ const DashboardPage = () => {
     }
   }, []);
 
+  useEffect(() => {
+    syncFromStorage();
+
+    // Re-sync when ConceptGraphPage writes evaluation data (same tab via dispatchEvent
+    // or cross-tab via real StorageEvent)
+    const onStorage = (e) => {
+      if (!e.key || e.key === 'learningEvaluationData' || e.key === 'learningTopicsData') {
+        syncFromStorage();
+      }
+    };
+    window.addEventListener('storage', onStorage);
+
+    // Also re-sync when user switches back to this tab
+    const onFocus = () => syncFromStorage();
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [syncFromStorage]);
+
   // Parse evaluation data
   const evaluationStats = useMemo(() => {
     const stats = {
@@ -62,36 +82,27 @@ const DashboardPage = () => {
     let totalConfidence = 0;
     let topicCount = 0;
 
-    Object.entries(evaluationData).forEach(([key, evalData]) => {
-      if (evalData && evalData.rating && evalData.topic) {
+    // evaluationData shape: { "TopicName": { rating, score, confidence, practicedAt } }
+    // The topic name is the KEY, not a .topic property inside the value.
+    Object.entries(evaluationData).forEach(([topicName, evalData]) => {
+      if (evalData && evalData.rating) {
         stats.total++;
         topicCount++;
-        totalConfidence += evalData.confidence || 0;
+        totalConfidence += evalData.confidence || evalData.score || 0;
+
+        const entry = {
+          name: evalData.topic || topicName,  // fall back to key if .topic missing
+          confidence: evalData.confidence || evalData.score || 0,
+          rating: evalData.rating,
+          practicedAt: evalData.practicedAt,
+        };
 
         switch (evalData.rating) {
-          case 'strong':
-            stats.strong.push({
-              name: evalData.topic,
-              confidence: evalData.confidence,
-              rating: 'strong',
-            });
-            break;
+          case 'strong':  stats.strong.push(entry);  break;
           case 'partial':
-            stats.partial.push({
-              name: evalData.topic,
-              confidence: evalData.confidence,
-              rating: 'partial',
-            });
-            break;
-          case 'weak':
-            stats.weak.push({
-              name: evalData.topic,
-              confidence: evalData.confidence,
-              rating: 'weak',
-            });
-            break;
-          default:
-            break;
+          case 'moderate': stats.partial.push(entry); break;
+          case 'weak':    stats.weak.push(entry);    break;
+          default: break;
         }
       }
     });
@@ -147,18 +158,18 @@ const DashboardPage = () => {
   const topicsWithStatus = useMemo(() => {
     return allTopics.map((topic) => {
       const topicName = typeof topic === 'string' ? topic : topic.name || topic;
-      let evaluation = null;
-
-      Object.entries(evaluationData).forEach(([key, evalData]) => {
-        if (evalData?.topic?.toLowerCase().includes(topicName.toLowerCase())) {
-          evaluation = evalData;
-        }
-      });
+      // Look up by key directly (the key IS the topic name)
+      const evalData = evaluationData[topicName]
+        // Also try case-insensitive lookup as a fallback
+        || Object.entries(evaluationData).find(
+            ([k]) => k.toLowerCase() === topicName.toLowerCase()
+          )?.[1]
+        || null;
 
       return {
         name: topicName,
-        rating: evaluation?.rating || 'unevaluated',
-        confidence: evaluation?.confidence || 0,
+        rating: evalData?.rating || 'unevaluated',
+        confidence: evalData?.confidence || evalData?.score || 0,
         prerequisites: dependencyData?.[topicName] || [],
       };
     });
@@ -179,14 +190,10 @@ const DashboardPage = () => {
 
   const getRatingIcon = (rating) => {
     switch (rating) {
-      case 'strong':
-        return '✅';
-      case 'partial':
-        return '⚠️';
-      case 'weak':
-        return '❌';
-      default:
-        return '❓';
+      case 'strong':  return 'Strong';
+      case 'partial': return 'Partial';
+      case 'weak':    return 'Weak';
+      default:        return 'Unknown';
     }
   };
 
@@ -213,7 +220,7 @@ const DashboardPage = () => {
           </Link>
           <div className="t-nav-links">
             <Link to="/" className="t-nav-link">Home</Link>
-            <Link to="/concept-graph" className="t-nav-link">Learn</Link>
+            <Link to="/syllabuses" className="t-nav-link">Learn</Link>
             <Link to="/dashboard" className="t-nav-link active">Dashboard</Link>
             <UserMenu />
           </div>
@@ -431,7 +438,7 @@ const DashboardPage = () => {
                     <div className="space-y-1">
                       {evaluationStats.strong.slice(0, 3).map((topic, idx) => (
                         <p key={idx} className="text-sm text-green-900">
-                          ✓ {topic.name}
+                          {topic.name}
                         </p>
                       ))}
                       {evaluationStats.strong.length > 3 && (

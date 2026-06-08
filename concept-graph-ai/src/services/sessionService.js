@@ -28,13 +28,13 @@ export const createSession = async (userId, { title, subject, extractedText, top
 };
 
 /* ─── update AI-generated data after questions/deps are ready ── */
-export const updateSessionData = async (sessionId, { questionsData, dependencyData } = {}) => {
+export const updateSessionData = async (sessionId, { questionsData, dependencyData, topicDepGraphs } = {}) => {
   if (!sessionId) return;
   try {
     await fetch(`${API_BASE}/sessions/${sessionId}/data`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questionsData, dependencyData }),
+      body: JSON.stringify({ questionsData, dependencyData, topicDepGraphs }),
     });
   } catch (err) {
     console.warn('[Session] updateSessionData failed:', err.message);
@@ -55,17 +55,14 @@ export const saveSessionEvaluation = async (sessionId, evaluationData) => {
   }
 };
 
-/* ─── list all sessions for a user ───────────────────────────── */
+/* ─── list all sessions for a user ────────────────────────── */
 export const getUserSessions = async (userId) => {
   if (!userId) return [];
-  try {
-    const res  = await fetch(`${API_BASE}/sessions/user/${encodeURIComponent(userId)}`);
-    const json = await res.json();
-    return json.success ? json.sessions : [];
-  } catch (err) {
-    console.warn('[Session] getUserSessions failed:', err.message);
-    return [];
-  }
+  const res  = await fetch(`${API_BASE}/sessions/user/${encodeURIComponent(userId)}`);
+  if (!res.ok) throw new Error(`Server returned ${res.status} for sessions list`);
+  const json = await res.json();
+  if (!json.success) throw new Error(json.message || 'Failed to load sessions');
+  return json.sessions ?? [];
 };
 
 /* ─── load full session data ──────────────────────────────────── */
@@ -98,10 +95,16 @@ export const activateSession = async (sessionId) => {
   if (!data) return null;
 
   // Write all session data to localStorage so existing hooks still work
-  if (data.topicsData)    localStorage.setItem('learningTopicsData',    JSON.stringify(data.topicsData));
-  if (data.questionsData) localStorage.setItem('learningQuestionsData', JSON.stringify(data.questionsData));
-  if (data.dependencyData)localStorage.setItem('learningDependencyData',JSON.stringify(data.dependencyData));
-  if (data.evaluationData)localStorage.setItem('learningEvaluationData',JSON.stringify(data.evaluationData));
+  if (data.topicsData)     localStorage.setItem('learningTopicsData',    JSON.stringify(data.topicsData));
+  if (data.questionsData)  localStorage.setItem('learningQuestionsData', JSON.stringify(data.questionsData));
+  if (data.dependencyData) localStorage.setItem('learningDependencyData',JSON.stringify(data.dependencyData));
+  if (data.evaluationData) localStorage.setItem('learningEvaluationData',JSON.stringify(data.evaluationData));
+  // Restore per-session dep graphs so DepGraphPage can show them
+  localStorage.setItem(`topicDepGraphs_${data.sessionId}`, JSON.stringify(data.topicDepGraphs || {}));
+  // Keep a global copy for backwards compat (ConceptGraphPage reads this)
+  if (Object.keys(data.topicDepGraphs || {}).length > 0) {
+    localStorage.setItem('topicDepGraphs', JSON.stringify(data.topicDepGraphs));
+  }
 
   return data;
 };

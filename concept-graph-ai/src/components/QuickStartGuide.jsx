@@ -7,7 +7,7 @@ export function QuickStartGuide() {
       title: 'Upload a Document',
       description: 'Upload PDFs, images, or documents to analyze',
       action: 'Concept Graph',
-      link: '/concept-graph',
+      link: '/syllabuses',
       icon: '📄',
       color: 'blue',
     },

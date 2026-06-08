@@ -16,7 +16,6 @@ const BLOOM_META  = {
   evaluate:  { label:'Evaluate',  color:'#f97316', desc:'Judge & critique' },
   create:    { label:'Create',    color:'#a855f7', desc:'Design novel solutions' },
 };
-const PASS_SCORE  = { remember:70, understand:70, apply:65, analyze:65, evaluate:60, create:60 };
 const API = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '');
 
 /* ─── shared spinner ──────────────────────────────────────────────── */
@@ -71,7 +70,7 @@ function computeQuestionCount(concept, subtopics = []) {
   return 6;
 }
 
-export default function BloomPanel({ concept, parentTopic, subtopics = [], onClose, inline = false, onQuizComplete }) {
+export default function BloomPanel({ concept, parentTopic, subtopics = [], onClose, inline = false, onQuizComplete, ragDocumentId = null, syllabusId = '' }) {
   const { user } = useAuth();
   const userId   = user?.uid || user?.id || 'guest';
 
@@ -132,6 +131,9 @@ export default function BloomPanel({ concept, parentTopic, subtopics = [], onClo
           // If this is a module/topic node, pass its subtopics so the backend
           // can generate questions covering all sub-topics breadth
           subtopics: subtopics.length > 0 ? subtopics : undefined,
+          // RAG params — enables content-grounded question generation
+          syllabusId:    syllabusId || undefined,
+          ragDocumentId: ragDocumentId || undefined,
         }),
       });
       const j = await r.json();
@@ -163,7 +165,12 @@ export default function BloomPanel({ concept, parentTopic, subtopics = [], onClo
       const r = await fetch(`${API}/api/bloom/evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, concept, bloomLevel: activeLevel, question: q.question, answer: a }),
+        body: JSON.stringify({
+          userId, concept, bloomLevel: activeLevel, question: q.question, answer: a,
+          // RAG params
+          syllabusId:    syllabusId || undefined,
+          ragDocumentId: ragDocumentId || undefined,
+        }),
       });
       const j = await r.json();
       if (j.success) {
@@ -237,7 +244,7 @@ export default function BloomPanel({ concept, parentTopic, subtopics = [], onClo
 
   /* ── styles ── */
   const S = {
-    overlay:   { position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', backdropFilter:'blur(3px)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 },
+    overlay:   { position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', backdropFilter:'blur(3px)', zIndex:10000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 },
     modal:     { background:'#fff', borderRadius:20, width:'100%', maxWidth:680, maxHeight:'90vh', overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 24px 80px rgba(0,0,0,0.22)' },
     header:    { padding:'20px 24px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between' },
     tabs:      { display:'flex', gap:4, padding:'0 24px', borderBottom:'1px solid #f1f5f9' },

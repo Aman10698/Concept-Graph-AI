@@ -31,7 +31,7 @@ export default function Navigation() {
         <div className="t-nav-links">
           <Link to="/"               className={`t-nav-link ${isActive('/')               ? 'active' : ''}`}>Home</Link>
           <Link to="/dashboard"      className={`t-nav-link ${isActive('/dashboard')      ? 'active' : ''}`}>Dashboard</Link>
-          <Link to="/concept-graph"  className={`t-nav-link ${isActive('/concept-graph')  ? 'active' : ''}`}>Learn</Link>
+          <Link to="/syllabuses"  className={`t-nav-link ${isActive('/syllabuses')  ? 'active' : ''}`}>Learn</Link>
           <Link to="/practice"       className={`t-nav-link ${isActive('/practice')       ? 'active' : ''}`}>Practice</Link>
           <button
             onClick={logout}

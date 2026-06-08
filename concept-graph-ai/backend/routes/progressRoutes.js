@@ -54,7 +54,7 @@ router.post('/progress/:userId', async (req, res) => {
     const doc = await Progress.findOneAndUpdate(
       { userId },
       { $set },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     console.log(`✅ Progress saved for user: ${userId}`);
@@ -87,7 +87,7 @@ router.patch('/progress/:userId/evaluation', async (req, res) => {
     await Progress.findOneAndUpdate(
       { userId },
       { $set },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     console.log(`✅ Evaluation merged for user: ${userId}`);

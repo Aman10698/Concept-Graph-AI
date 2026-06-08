@@ -214,15 +214,29 @@ const quizWorkflow = {
   },
 
   updateProgress: async (userId, topic, evaluation) => {
-    console.log('\n📈 QUIZ STEP 4: Updating user progress...');
+    console.log('\n📈 QUIZ STEP 4: Updating user progress in MongoDB...');
+    const topicKey = topic.toLowerCase().replace(/\s+/g, '_');
+    await mongoService.updateUserProgress(userId, {
+      [`topics.${topicKey}`]: {
+        rating:       evaluation.rating,
+        score:        evaluation.score ?? 0,
+        confidence:   evaluation.confidence ?? 0,
+        masteryLevel: evaluation.rating === 'strong'  ? 'advanced'
+                    : evaluation.rating === 'partial' ? 'intermediate'
+                    : 'beginner',
+        attempts:     1,
+        lastPracticed: new Date(),
+      },
+    });
     console.log(`✅ Progress updated for topic: ${topic}`);
     return { success: true, progress: { topic, rating: evaluation.rating, score: evaluation.score } };
   },
 
   saveResult: async (userId, quizResult) => {
-    console.log('\n💾 QUIZ STEP 5: Saving quiz result...');
-    console.log('✅ Quiz result saved');
-    return { success: true, resultId: 'quiz_' + Date.now() };
+    console.log('\n💾 QUIZ STEP 5: Saving quiz result to MongoDB...');
+    const result = await mongoService.saveQuizResult(userId, quizResult);
+    console.log(`✅ Quiz result saved: ${result.id}`);
+    return { success: true, resultId: result.id };
   },
 
   processQuizAnswer: async (userId, quizData) => {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useLayoutEffect } from 'react';
 import { Link } from 'react-router-dom';
 import StreakPanel from '../components/StreakPanel';
 import '../pages/KnowledgeGraphPage.css';
@@ -6,17 +6,23 @@ import '../pages/KnowledgeGraphPage.css';
 /* ─── Rating helpers ────────────────────────────────────── */
 function getRatingStyle(rating) {
   switch (rating) {
-    case 'strong':  return { badge: '#22c55e', badgeBg: '#f0fdf4', bar: '#22c55e', border: '#86efac', nodeIcon: '#f0fdf4' };
-    case 'partial': case 'moderate': return { badge: '#f59e0b', badgeBg: '#fffbeb', bar: '#f59e0b', border: '#fcd34d', nodeIcon: '#fffbeb' };
-    case 'weak':    return { badge: '#ef4444', badgeBg: '#fef2f2', bar: '#ef4444', border: '#fca5a5', nodeIcon: '#fef2f2' };
-    default:        return { badge: '#9ca3af', badgeBg: '#f9fafb', bar: '#e2e8f0', border: '#e2e8f0', nodeIcon: '#f9fafb' };
+    case 'strong':
+      return { badge: '#22c55e', badgeBg: '#f0fdf4', bar: '#22c55e', border: '#86efac', nodeIcon: '#f0fdf4' };
+    case 'partial':
+    case 'moderate':
+      return { badge: '#f59e0b', badgeBg: '#fffbeb', bar: '#f59e0b', border: '#fcd34d', nodeIcon: '#fffbeb' };
+    case 'weak':
+      return { badge: '#ef4444', badgeBg: '#fef2f2', bar: '#ef4444', border: '#fca5a5', nodeIcon: '#fef2f2' };
+    default:
+      return { badge: '#9ca3af', badgeBg: '#f9fafb', bar: '#e2e8f0', border: '#e2e8f0', nodeIcon: '#f9fafb' };
   }
 }
 
 function getRatingLabel(rating) {
   switch (rating) {
     case 'strong':  return 'Strong';
-    case 'partial': case 'moderate': return 'Partial';
+    case 'partial':
+    case 'moderate': return 'Partial';
     case 'weak':    return 'Weak';
     default:        return 'Not Started';
   }
@@ -33,7 +39,9 @@ function topicIcon(name, idx) {
     'machine learning': '🤖', 'linear algebra': '🔢', 'probability': '📊',
     'statistics': '📊', 'python': '💻', 'calculus': '∫', 'numpy': '📦',
     'pandas': '🐼', 'neural': '🧠', 'deep learning': '🧠',
-    'descriptive statistics': '📈', 'data': '💾',
+    'descriptive statistics': '📈', 'data': '💾', 'cloud': '☁️',
+    'virtualization': '🖥️', 'network': '🌐', 'security': '🔒',
+    'database': '🗄️', 'algorithm': '⚙️', 'software': '💾',
   };
   const lower = (name || '').toLowerCase();
   for (const [k, v] of Object.entries(icons)) {
@@ -42,67 +50,206 @@ function topicIcon(name, idx) {
   return TOPIC_ICONS[idx % TOPIC_ICONS.length];
 }
 
-/* ── Concept Node Card ────────────────────────────────────── */
-function ConceptNode({ name, rating, confidence, isRoot = false, onClick, idx = 0 }) {
-  const s = getRatingStyle(rating);
+/* ── Compute module coverage % (topics practised / total) ── */
+function getModuleProgress(topicObj, evaluationData) {
+  const getName = t => (typeof t === 'string' ? t : t.name);
+  const name    = getName(topicObj);
+
+  const subtopics = (typeof topicObj === 'object' && Array.isArray(topicObj.subtopics))
+    ? topicObj.subtopics.map(s => (typeof s === 'string' ? s : s.name)).filter(Boolean)
+    : [];
+
+  if (subtopics.length === 0) {
+    // No subtopics — module itself counts as 1 topic: 100% if practised, 0% if not
+    return evaluationData[name] ? 100 : 0;
+  }
+
+  // Count how many subtopics (+ the module itself) have been practised
+  const allNodes   = [name, ...subtopics];
+  const practised  = allNodes.filter(n => !!evaluationData[n]).length;
+  return Math.round((practised / allNodes.length) * 100);
+}
+
+/* ── Concept Node Card ──────────────────────────────────── */
+function ConceptNode({ name, rating, pct, isRoot = false, onClick, idx = 0, nodeRef }) {
+  const s    = getRatingStyle(rating);
   const label = getRatingLabel(rating);
-  const icon = topicIcon(name, idx);
-  const pct = rating === 'strong' ? (confidence || 85)
-            : rating === 'partial' || rating === 'moderate' ? (confidence || 55)
-            : rating === 'weak' ? (confidence || 25)
-            : 0;
+  const icon  = topicIcon(name, idx);
+  const progressColor = isRoot ? '#7c3aed' : s.bar;
 
   return (
     <div
+      ref={nodeRef}
       className={`kg-node${isRoot ? ' kg-node-root' : ''}`}
-      style={{ borderColor: isRoot ? '#7c3aed' : s.border, minWidth: 170 }}
-      onClick={() => onClick && onClick(name)}
+      style={{ borderColor: isRoot ? '#7c3aed' : s.border, width: isRoot ? 200 : 190 }}
+      onClick={() => onClick && !isRoot && onClick(name)}
     >
       <div className="kg-node-header">
         <div className="kg-node-icon" style={{ background: isRoot ? '#f5f3ff' : s.nodeIcon, fontSize: '1rem' }}>
           {icon}
         </div>
         <div className="kg-node-title">{name}</div>
-        <button className="kg-node-more" onClick={e => e.stopPropagation()}>⋮</button>
+        {!isRoot && (
+          <button className="kg-node-more" onClick={e => e.stopPropagation()}>⋮</button>
+        )}
       </div>
 
-      {!isRoot && (
+      {isRoot ? (
+        <span className="kg-node-badge" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
+          Root Concept
+        </span>
+      ) : (
         <span className="kg-node-badge" style={{ background: s.badgeBg, color: s.badge }}>
           {label}
         </span>
       )}
-      {isRoot && (
-        <span className="kg-node-badge" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
-          Root Concept
-        </span>
-      )}
 
       <div className="kg-node-bar-bg">
-        <div className="kg-node-bar-fill" style={{ width: `${pct}%`, background: isRoot ? '#7c3aed' : s.bar }} />
+        <div
+          className="kg-node-bar-fill"
+          style={{ width: `${pct}%`, background: progressColor }}
+        />
       </div>
-      <div className="kg-node-pct">{pct}%</div>
+      <div className="kg-node-pct">{Math.round(pct)}%</div>
     </div>
   );
 }
 
-/* ── SVG connector arrows ────────────────────────────────── */
-function Connector({ dashed = false, color = '#9ca3af' }) {
+/* ── Fan-out Tree with SVG connector lines ──────────────── */
+function TreeGraph({ subject, topics, evaluationData, onNodeClick }) {
+  const rootRef = useRef(null);
+  const childRefs = useRef([]);
+  const containerRef = useRef(null);
+  const [lines, setLines] = useState([]);
+
+  // Compute per-module progress
+  const moduleData = useMemo(() => topics.map((t, i) => {
+    const name   = typeof t === 'string' ? t : t.name;
+    const ev     = evaluationData[name];
+    const rating = ev?.rating || null;
+    const pct    = getModuleProgress(t, evaluationData);
+    return { name, rating, pct, idx: i, topic: t };
+  }), [topics, evaluationData]);
+
+  // Root progress = average coverage across all modules
+  const rootPct = useMemo(() => {
+    if (topics.length === 0) return 0;
+    const total = topics.reduce((s, t) => s + getModuleProgress(t, evaluationData), 0);
+    return Math.round(total / topics.length);
+  }, [topics, evaluationData]);
+
+  // Recompute SVG connector lines after render
+  useLayoutEffect(() => {
+    const compute = () => {
+      if (!rootRef.current || !containerRef.current) return;
+      const container = containerRef.current.getBoundingClientRect();
+      const root      = rootRef.current.getBoundingClientRect();
+
+      const rootX = root.left + root.width / 2  - container.left;
+      const rootY = root.bottom - container.top;
+
+      const newLines = childRefs.current.map(ref => {
+        if (!ref) return null;
+        const child = ref.getBoundingClientRect();
+        const cx    = child.left + child.width / 2 - container.left;
+        const cy    = child.top  - container.top;
+        return { x1: rootX, y1: rootY, x2: cx, y2: cy };
+      }).filter(Boolean);
+
+      setLines(newLines);
+    };
+
+    compute();
+    const ro = new ResizeObserver(compute);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [moduleData.length]);
+
+  const GAP_Y = 80; // vertical gap between root bottom and children top
+
   return (
-    <svg width="24" height="32" style={{ flexShrink: 0 }}>
-      <defs>
-        <marker id={`arr${dashed ? 'd' : 's'}`} markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" fill={color} opacity="0.6" />
-        </marker>
-      </defs>
-      <line x1="12" y1="0" x2="12" y2="26"
-        stroke={color} strokeWidth="1.5" opacity="0.6"
-        strokeDasharray={dashed ? '4 3' : undefined}
-        markerEnd={`url(#arr${dashed ? 'd' : 's'})`}
-      />
-    </svg>
+    <div
+      ref={containerRef}
+      style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0, paddingBottom: 24 }}
+    >
+      {/* SVG for connector lines — drawn over the layout */}
+      <svg
+        style={{
+          position: 'absolute', top: 0, left: 0,
+          width: '100%', height: '100%',
+          pointerEvents: 'none', overflow: 'visible', zIndex: 0,
+        }}
+      >
+        <defs>
+          <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#c4b5fd" opacity="0.8" />
+          </marker>
+        </defs>
+        {lines.map((l, i) => (
+          <path
+            key={i}
+            d={`M ${l.x1} ${l.y1} C ${l.x1} ${l.y1 + GAP_Y * 0.55}, ${l.x2} ${l.y2 - GAP_Y * 0.55}, ${l.x2} ${l.y2}`}
+            fill="none"
+            stroke="#c4b5fd"
+            strokeWidth="1.8"
+            strokeDasharray={i > 0 ? '5 3' : undefined}
+            opacity="0.85"
+            markerEnd="url(#arrowhead)"
+          />
+        ))}
+      </svg>
+
+      {/* Root node */}
+      <div style={{ position: 'relative', zIndex: 1, marginBottom: GAP_Y }}>
+        <ConceptNode
+          nodeRef={rootRef}
+          name={subject}
+          rating={null}
+          pct={rootPct}
+          isRoot={true}
+          idx={-1}
+        />
+      </div>
+
+      {/* Children row — all modules at same level */}
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 16,
+        justifyContent: 'center',
+        position: 'relative',
+        zIndex: 1,
+      }}>
+        {moduleData.map((m, i) => (
+          <ConceptNode
+            key={m.name}
+            nodeRef={el => { childRefs.current[i] = el; }}
+            name={m.name}
+            rating={m.rating}
+            pct={m.pct}
+            isRoot={false}
+            onClick={onNodeClick}
+            idx={m.idx}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
+/* ── Time-ago helper ────────────────────────────────────── */
+function timeAgoStr(ts) {
+  if (!ts) return 'Recently';
+  const diff = Date.now() - ts;
+  const mins  = Math.floor(diff / 60000);
+  if (mins < 1)   return 'Just now';
+  if (mins < 60)  return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)   return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7)   return `${days}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
 
 /* ── Main Knowledge Graph View ───────────────────────────── */
 export default function KnowledgeGraphView({
@@ -115,56 +262,28 @@ export default function KnowledgeGraphView({
 }) {
   const [scale, setScale] = useState(1);
 
-  const topics = useMemo(() => topicsData?.topics ?? [], [topicsData]);
+  const topics  = useMemo(() => topicsData?.topics ?? [], [topicsData]);
   const subject = topicsData?.subject || 'Your Subject';
-  const getName = t => typeof t === 'string' ? t : t.name;
 
-  const topicsMapped = useMemo(() => {
-    return topics.map((t, i) => {
-      const name = getName(t);
-      const ev   = evaluationData[name];
-      return {
-        name,
-        rating:     ev?.rating || null,
-        confidence: ev?.confidence || ev?.score || 0,
-        subtopics:  typeof t === 'object' ? (t.subtopics || []) : [],
-        idx: i,
-      };
-    });
-  }, [topics, evaluationData]);
-
-  /* Level 1 topics (up to 3 shown prominently) */
-  const level1 = topicsMapped.slice(0, 3);
-  /* Level 2 topics (next 3) */
-  const level2 = topicsMapped.slice(3, 6);
-  /* Level 3 (remaining up to 3) */
-  const level3 = topicsMapped.slice(6, 9);
-
-  /* Recent activity from eval data */
+  /* Recent activity — sorted by real practicedAt, most recent first */
   const recentActivity = useMemo(() => {
     return Object.entries(evaluationData)
-      .slice(0, 3)
+      .filter(([, ev]) => ev.rating)
+      .sort(([, a], [, b]) => (b.practicedAt || 0) - (a.practicedAt || 0))
+      .slice(0, 4)
       .map(([name, ev]) => ({
         name,
-        type: ev.rating === 'strong' ? 'quiz'
-            : ev.rating === 'partial' ? 'video'
-            : 'practice',
-        score: ev.confidence || ev.score || 0,
+        rating:      ev.rating,
+        score:       ev.score ?? ev.confidence ?? 0,
+        practicedAt: ev.practicedAt,
       }));
   }, [evaluationData]);
-
-  const activityIcons = {
-    quiz:     { bg: '#f0fdf4', icon: '✅' },
-    video:    { bg: '#eff6ff', icon: '▶️' },
-    practice: { bg: '#fefce8', icon: '⭐' },
-  };
 
   /* If no topics yet, show wizard content */
   if (!topicsData || topics.length === 0) {
     return (
       <div className="kg-page">
         <div className="kg-center">
-          {/* toolbar */}
           <div className="kg-toolbar">
             <button className="kg-toolbar-btn" onClick={() => setScale(1)}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
@@ -179,16 +298,11 @@ export default function KnowledgeGraphView({
               Zoom Out
             </button>
             <div className="kg-toolbar-sep" />
-            <button className="kg-filter-btn">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46"/></svg>
-              Filter
-            </button>
             <div className="kg-view-select">
               View: Mastery
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6,9 12,15 18,9"/></svg>
             </div>
           </div>
-
           <div className="kg-wizard-wrap" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column' }}>
             {wizardChildren}
           </div>
@@ -217,14 +331,26 @@ export default function KnowledgeGraphView({
             Zoom Out
           </button>
           <div className="kg-toolbar-sep" />
-          <button className="kg-filter-btn">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46"/></svg>
-            Filter
-          </button>
           <div className="kg-view-select">
             View: Mastery
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6,9 12,15 18,9"/></svg>
           </div>
+          {/* Reset button */}
+          {completedSteps && completedSteps.size > 0 && onReset && (
+            <button
+              onClick={onReset}
+              style={{
+                marginLeft: 'auto',
+                padding: '6px 14px', borderRadius: 8, border: '1px solid #eef0f6',
+                background: '#fff', color: '#6b7280', fontSize: '0.75rem', fontWeight: 600,
+                cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+              }}
+              onMouseOver={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
+              onMouseOut={e => { e.currentTarget.style.borderColor = '#eef0f6'; e.currentTarget.style.color = '#6b7280'; }}
+            >
+              Start Over
+            </button>
+          )}
         </div>
 
         {/* Graph Area */}
@@ -234,122 +360,15 @@ export default function KnowledgeGraphView({
             transformOrigin: 'top center',
             transition: 'transform 0.2s',
             minWidth: 600,
+            padding: '12px 24px 24px',
           }}>
-            {/* Layout: hierarchical tree */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0, paddingTop: 8 }}>
-              {/* Root node */}
-              <ConceptNode
-                name={subject}
-                rating={null}
-                confidence={topicsMapped.filter(t => t.rating === 'strong').length / Math.max(topicsMapped.length, 1) * 100}
-                isRoot={true}
-                onClick={() => {}}
-                idx={-1}
-              />
-
-              {/* connector down */}
-              {level1.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
-                  <Connector color="#7c3aed" />
-                </div>
-              )}
-
-              {/* Level 1 topics */}
-              {level1.length > 0 && (
-                <>
-                  <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'center' }}>
-                    {level1.map((t, i) => (
-                      <ConceptNode
-                        key={t.name}
-                        name={t.name}
-                        rating={t.rating}
-                        confidence={t.confidence}
-                        onClick={onNodeClick}
-                        idx={t.idx}
-                      />
-                    ))}
-                  </div>
-
-                  {/* connectors between L1 and L2 */}
-                  {level2.length > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: level1.length > 1 ? 186 : 0, width: '100%' }}>
-                      {level1.slice(0, Math.min(level1.length, level2.length)).map((_, i) => (
-                        <Connector key={i} dashed={i === 1} color="#9ca3af" />
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Level 2 topics */}
-                  {level2.length > 0 && (
-                    <>
-                      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'center' }}>
-                        {level2.map((t, i) => (
-                          <ConceptNode
-                            key={t.name}
-                            name={t.name}
-                            rating={t.rating}
-                            confidence={t.confidence}
-                            onClick={onNodeClick}
-                            idx={t.idx}
-                          />
-                        ))}
-                      </div>
-
-                      {/* connectors to L3 */}
-                      {level3.length > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginRight: 8 }}>
-                          <Connector color="#ef4444" />
-                        </div>
-                      )}
-
-                      {/* Level 3 */}
-                      {level3.length > 0 && (
-                        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'center' }}>
-                          {level3.map((t) => (
-                            <ConceptNode
-                              key={t.name}
-                              name={t.name}
-                              rating={t.rating}
-                              confidence={t.confidence}
-                              onClick={onNodeClick}
-                              idx={t.idx}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
-
-              {/* Remaining topics (overflow) */}
-              {topicsMapped.length > 9 && (
-                <div style={{ marginTop: 16, padding: '10px 16px', background: '#f5f3ff', borderRadius: 10, border: '1px dashed #ddd6fe', fontSize: '0.78rem', color: '#7c3aed', fontWeight: 600 }}>
-                  +{topicsMapped.length - 9} more topics — scroll down or zoom out to see all
-                </div>
-              )}
-            </div>
+            <TreeGraph
+              subject={subject}
+              topics={topics}
+              evaluationData={evaluationData}
+              onNodeClick={onNodeClick}
+            />
           </div>
-
-
-
-          {/* Reset button */}
-          {completedSteps && completedSteps.size > 0 && onReset && (
-            <div style={{ position: 'absolute', top: 12, right: 12 }}>
-              <button
-                onClick={onReset}
-                style={{
-                  padding: '6px 14px', borderRadius: 8, border: '1px solid #eef0f6',
-                  background: '#fff', color: '#6b7280', fontSize: '0.75rem', fontWeight: 600,
-                  cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
-                }}
-                onMouseOver={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
-                onMouseOut={e => { e.currentTarget.style.borderColor = '#eef0f6'; e.currentTarget.style.color = '#6b7280'; }}
-              >
-                Start Over
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Recent Activity bar */}
@@ -357,24 +376,30 @@ export default function KnowledgeGraphView({
           <div className="kg-activity-header">
             <span className="kg-activity-title">Recent Activity</span>
             <Link to="/practice" className="kg-activity-link">
-              View All Activity
+              View All →
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9,18 15,12 9,6"/></svg>
             </Link>
           </div>
 
           <div className="kg-activity-items">
             {recentActivity.length > 0 ? recentActivity.map((item, i) => {
-              const ai = activityIcons[item.type] || activityIcons.practice;
-              const timeAgo = i === 0 ? '2h ago' : i === 1 ? '1d ago' : '2d ago';
-              const actionText = item.type === 'quiz'    ? `Scored ${item.score}% in quiz on`
-                               : item.type === 'video'   ? `Watched video on`
-                               : `Solved ${item.score > 0 ? Math.ceil(item.score / 10) : 3} questions on`;
+              const color = item.score >= 70 ? '#22c55e' : item.score >= 40 ? '#f59e0b' : '#ef4444';
+              const bg    = item.score >= 70 ? '#f0fdf4' : item.score >= 40 ? '#fffbeb' : '#fef2f2';
+              const icon  = item.rating === 'strong' ? '✅' : item.rating === 'weak' ? '⚠️' : '📊';
+              const action = item.rating === 'strong' ? 'Mastered'
+                           : item.rating === 'partial' || item.rating === 'moderate' ? 'In Progress'
+                           : item.rating === 'weak' ? 'Needs Work' : 'Practised';
               return (
                 <div key={i} className="kg-activity-item">
-                  <div className="kg-activity-icon" style={{ background: ai.bg }}>{ai.icon}</div>
+                  <div className="kg-activity-icon" style={{ background: bg }}>{icon}</div>
                   <div>
-                    <div className="kg-activity-text">{actionText} <strong>{item.name}</strong></div>
-                    <div className="kg-activity-time">{timeAgo}</div>
+                    <div className="kg-activity-text">
+                      {action} — <strong>{item.name}</strong>
+                      {item.score > 0 && (
+                        <span style={{ marginLeft: 6, fontWeight: 700, color }}>{item.score}%</span>
+                      )}
+                    </div>
+                    <div className="kg-activity-time">{timeAgoStr(item.practicedAt)}</div>
                   </div>
                 </div>
               );

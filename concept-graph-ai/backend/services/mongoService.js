@@ -106,7 +106,7 @@ const updateUserProgress = async (userId, progressData) => {
     await Progress.findOneAndUpdate(
       { userId },
       { $set: { ...progressData, updatedAt: new Date() } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
     console.log(`✅ Progress updated for: ${userId}`);
     return { success: true };

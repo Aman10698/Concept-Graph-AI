@@ -5,7 +5,7 @@ import { useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import LandingPage from './pages/LandingPage';
-import ConceptGraphPage from './pages/ConceptGraphPage';
+
 import Dashboard from './components/Dashboard';
 import PracticePage from './pages/PracticePage';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -13,6 +13,10 @@ import AppLayout from './components/AppLayout';
 import MySyllabusesPage from './pages/MySyllabusesPage';
 import ProfilePage from './pages/ProfilePage';
 import AboutPage from './pages/AboutPage';
+import RagStudyPage from './pages/RagStudyPage';
+import ChatsPage from './pages/ChatsPage';
+import DepGraphPage from './pages/DepGraphPage';
+import ConceptGraphPage from './pages/ConceptGraphPage';
 
 /**
  * AppRoutes — clean routing that uses AppLayout for all authenticated pages
@@ -65,14 +69,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/concept-graph"
-        element={
-          <ProtectedRoute>
-            <AppLayout><ConceptGraphPage /></AppLayout>
-          </ProtectedRoute>
-        }
-      />
+
       <Route
         path="/practice"
         element={
@@ -102,6 +99,39 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <AppLayout><AboutPage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/rag-study"
+        element={
+          <ProtectedRoute>
+            <AppLayout><RagStudyPage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/chats"
+        element={
+          <ProtectedRoute>
+            <AppLayout><ChatsPage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/dep-graph"
+        element={
+          <ProtectedRoute>
+            <AppLayout><DepGraphPage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/learn"
+        element={
+          <ProtectedRoute>
+            <AppLayout><ConceptGraphPage /></AppLayout>
           </ProtectedRoute>
         }
       />

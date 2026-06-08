@@ -1,5 +1,5 @@
 const topicExtractionService = require('../services/topicExtractionService');
-const ollamaService = require('../services/ollamaService');
+const ollamaService = require('../services/ollamaWorkerService');  // ★ runs in isolated subprocess
 
 /**
  * POST /api/topics
@@ -49,29 +49,44 @@ const extractTopics = async (req, res) => {
       console.warn('⚠️  Gemini unavailable, falling back to rule-based:', geminiErr.message);
     }
 
-    // ── Fallback: rule-based ─────────────────────────────────────
+    // ── Fallback: rule-based ──────────────────────────────────────
     if (!result) {
       console.log('📊 Using rule-based topic extraction...');
-      // identifyTopicsAndSubtopics is async — must await it
-      const fallback = await topicExtractionService.identifyTopicsAndSubtopics(text);
+      try {
+        // identifyTopicsAndSubtopics is async — must await it
+        const fallback = await topicExtractionService.identifyTopicsAndSubtopics(text);
 
-      // The service returns { mainTopics, topicsData, subject, summary, keyTerms, relationships }
-      // Normalise to the shape callers expect (topics array of objects)
-      const topics = (fallback.topicsData || []).length > 0
-        ? fallback.topicsData
-        : (fallback.mainTopics || []).map(name => ({ name, description: '', subtopics: [] }));
+        // The service returns { mainTopics, topicsData, subject, summary, keyTerms, relationships }
+        // Normalise to the shape callers expect (topics array of objects)
+        const topics = (fallback.topicsData || []).length > 0
+          ? fallback.topicsData
+          : (fallback.mainTopics || []).map(name => ({ name, description: '', subtopics: [] }));
 
-      result = {
-        topics,
-        subject:       fallback.subject    || topics[0]?.name || 'Concept Map',
-        summary:       fallback.summary    || '',
-        relationships: fallback.relationships || [],
-        keyTerms:      fallback.keyTerms   || [],
-        allKeywords:   (fallback.mainTopics || topics.map(t => t.name)),
-        confidence:    0.6,
-        source:        'rule-based',
-      };
-      console.log(`✅ Rule-based extracted ${topics.length} topics`);
+        result = {
+          topics,
+          subject:       fallback.subject    || topics[0]?.name || 'Concept Map',
+          summary:       fallback.summary    || '',
+          relationships: fallback.relationships || [],
+          keyTerms:      fallback.keyTerms   || [],
+          allKeywords:   (fallback.mainTopics || topics.map(t => t.name)),
+          confidence:    0.6,
+          source:        'rule-based',
+        };
+        console.log(`✅ Rule-based extracted ${topics.length} topics`);
+      } catch (fallbackErr) {
+        console.error('❌ Rule-based fallback also failed:', fallbackErr.message);
+        // Last resort: return empty-but-valid result so the frontend doesn’t crash
+        result = {
+          topics: [],
+          subject: 'Concept Map',
+          summary: '',
+          relationships: [],
+          keyTerms: [],
+          allKeywords: [],
+          confidence: 0,
+          source: 'error-fallback',
+        };
+      }
     }
 
     res.status(200).json({

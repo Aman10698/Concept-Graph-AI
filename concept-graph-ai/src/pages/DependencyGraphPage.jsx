@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import DependencyViewer from '../components/DependencyViewer'
 import { Link } from 'react-router-dom'
+import { onEvalChange, offEvalChange } from '../utils/evalBus'
 
 export default function DependencyGraphPage() {
   const [dependencyData, setDependencyData] = useState(null)
   const [topicsData, setTopicsData] = useState(null)
   const [evalData, setEvalData] = useState({})
 
-  useEffect(() => {
+  const readStorage = useCallback(() => {
     try {
       const deps   = localStorage.getItem('learningDependencyData')
       const topics = localStorage.getItem('learningTopicsData')
@@ -19,6 +20,13 @@ export default function DependencyGraphPage() {
       console.error('Failed to load dependency data:', e)
     }
   }, [])
+
+  useEffect(() => {
+    readStorage()
+    // Re-read whenever any quiz completes (same-tab or cross-tab)
+    onEvalChange(readStorage)
+    return () => offEvalChange(readStorage)
+  }, [readStorage])
 
   return (
     <div>
@@ -75,7 +83,7 @@ export default function DependencyGraphPage() {
             Upload a syllabus first to generate topic dependencies. The graph will appear here automatically after analysis.
           </p>
           <Link
-            to="/concept-graph"
+            to="/syllabuses"
             id="dep-graph-upload-link"
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 8,
