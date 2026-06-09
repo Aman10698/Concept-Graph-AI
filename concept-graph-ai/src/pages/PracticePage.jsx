@@ -340,7 +340,7 @@ export default function PracticePage() {
         </h1>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
         {/* ── LEFT: Mind map ── */}
         <div>
@@ -434,63 +434,7 @@ export default function PracticePage() {
           )}
         </div>
 
-        {/* ── RIGHT: Stats sidebar ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-          {/* Summary */}
-          <div className="t-card" style={{ padding: '18px' }}>
-            <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
-              Summary
-            </p>
-            {[
-              { label: 'Total Topics', value: topics.length,                                                                          color: '#6366f1' },
-              { label: 'Mastered',     value: masteredCount,                                                                          color: '#22c55e' },
-              { label: 'In Progress',  value: topics.filter(t => ['partial','moderate'].includes(evalData[getName(t)]?.rating)).length, color: '#f59e0b' },
-              { label: 'Needs Work',   value: weakTopics.length,                                                                       color: '#ef4444' },
-              { label: 'Not Started',  value: topics.filter(t => !evalData[getName(t)]).length,                                        color: '#9ca3af' },
-            ].map(s => (
-              <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f8faff' }}>
-                <span style={{ fontSize: '0.8rem', color: '#374151', fontWeight: 500 }}>{s.label}</span>
-                <span style={{ fontSize: '1rem', fontWeight: 800, color: s.color }}>{s.value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Topic list (quick access) */}
-          <div className="t-card" style={{ padding: '18px' }}>
-            <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
-              All Topics
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
-              {topics.map(t => {
-                const name  = getName(t)
-                const color = nodeColor(evalData[name]?.rating)
-                return (
-                  <button
-                    key={name}
-                    onClick={() => setSelectedTopic(name)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
-                      borderRadius: 8, background: `${color}08`, border: `1.5px solid ${color}25`,
-                      cursor: 'pointer', textAlign: 'left', width: '100%',
-                      transition: 'all 0.15s',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = `${color}18`}
-                    onMouseLeave={e => e.currentTarget.style.background = `${color}08`}
-                  >
-                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#0f172a', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-                    <span style={{ fontSize: '0.65rem', color, fontWeight: 700, flexShrink: 0 }}>
-                      {ratingLabel(evalData[name]?.rating)}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-
-        </div>
       </div>
     </div>
   )

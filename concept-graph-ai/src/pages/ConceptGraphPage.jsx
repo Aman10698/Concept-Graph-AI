@@ -1231,63 +1231,15 @@ const ConceptGraphPage = () => {
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 20, alignItems: 'start' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-        {/* ── Left: step sidebar ── */}
-        <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #eef0f6', padding: '12px 8px', position: 'sticky', top: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {(() => {
-              const lastDoneIdx = STEPS.reduce((acc, s, i) => completedSteps.has(s.id) ? i : acc, -1);
-              const visibleUpTo = Math.min(lastDoneIdx + 2, STEPS.length - 1);
-              return STEPS.slice(0, visibleUpTo + 1).map((step, idx) => {
-                const status = stepStatus(step.id);
-                const canClick = canAccess(step.id);
-                const isCurrent = wizardStep === step.id;
-                const isLast = idx === visibleUpTo;
-                return (
-                  <React.Fragment key={step.id}>
-                    <StepItem step={step} index={idx} status={status} isCurrent={isCurrent} canClick={canClick} onClick={goTo} />
-                    {!isLast && (
-                      <div style={{
-                        width: 2, height: 10, marginLeft: 31,
-                        background: completedSteps.has(step.id) ? '#22c55e' : 'rgba(99,102,241,0.12)',
-                        borderRadius: 999, transition: 'background 0.3s'
-                      }} />
-                    )}
-                  </React.Fragment>
-                );
-              });
-            })()}
-          </div>
-
-          {completedSteps.size > 0 && (
-            <button onClick={handleReset} className="t-btn t-btn-ghost t-btn-sm" style={{ width: '100%', marginTop: 16 }}>
-              Start Over
-            </button>
-          )}
-        </div>
-
-        {/* ── Right: active step content ── */}
+        {/* ── Step content ── */}
         <div>
-          {/* Step breadcrumb pill */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-            <span style={{
-              padding: '4px 14px', borderRadius: 999,
-              background: 'linear-gradient(135deg, #7c3aed, #6366f1)',
-              color: '#fff', fontSize: '0.78rem', fontWeight: 700
-            }}>
-              Step {currentIdx + 1} of {STEPS.length}
-            </span>
-            <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>
-              {STEPS[currentIdx]?.desc}
-            </span>
-          </div>
-
           <div className="t-card t-animate-in" key={wizardStep} style={{ padding: '28px' }}>
             {activeContent}
           </div>
 
-          {/* Next step CTA — on mindmap only after quiz answered */}
+          {/* Next step CTA */}
           {completedSteps.has(wizardStep) &&
             (wizardStep !== 'mindmap' || Object.keys(evaluationData).length > 0) &&
             STEPS[currentIdx + 1] && (

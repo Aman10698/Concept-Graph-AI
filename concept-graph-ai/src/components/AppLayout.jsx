@@ -64,13 +64,12 @@ const Icon = {
 
 /* ── Nav Items ──────────────────────────────────────────────── */
 const NAV_ITEMS = [
-  { path: '/dashboard',  label: 'Dashboard',    icon: 'dashboard',  key: 'dashboard'  },
-  { path: '/learn',      label: 'Upload Syllabus', icon: 'learn',    key: 'learn'      },
-  { path: '/practice',   label: 'Practice',      icon: 'practice',   key: 'practice'   },
-  { path: '/syllabuses', label: 'My Syllabuses', icon: 'syllabuses', key: 'syllabuses' },
-  { path: '/dep-graph',  label: 'Dep. Graph',    icon: 'depgraph',   key: 'depgraph'   },
-  { path: '/rag-study',  label: 'Upload Notes',  icon: 'rag',        key: 'rag'        },
-  { path: '/chats',      label: 'Chats',         icon: 'chat',       key: 'chats'      },
+  { path: '/dashboard',  label: 'Dashboard',        icon: 'dashboard',  key: 'dashboard'  },
+  { path: '/syllabuses', label: 'Upload Syllabus',   icon: 'syllabuses', key: 'syllabuses' },
+  { path: '/practice',   label: 'Practice',          icon: 'practice',   key: 'practice'   },
+  { path: '/dep-graph',  label: 'Dep. Graph',        icon: 'depgraph',   key: 'depgraph'   },
+  { path: '/rag-study',  label: 'Upload Notes',      icon: 'rag',        key: 'rag'        },
+  { path: '/chats',      label: 'Chats',             icon: 'chat',       key: 'chats'      },
 ]
 
 const NAV_BOTTOM = [
@@ -107,7 +106,7 @@ export default function AppLayout({ children }) {
     const p = location.pathname
     if (p === '/dashboard')  return { title: 'Dashboard',         sub: 'Track your learning progress' }
     if (p === '/practice')   return { title: 'Practice',           sub: 'Quiz yourself on any topic' }
-    if (p === '/syllabuses') return { title: 'My Syllabuses',      sub: 'Manage your uploaded syllabuses' }
+    if (p === '/syllabuses') return { title: 'Upload Syllabus',    sub: 'Upload a PDF or image to generate your concept graph' }
     if (p === '/dep-graph')  return { title: 'Prerequisite Graph', sub: 'AI-generated dependency analysis from your quiz answers' }
     if (p === '/profile')    return { title: 'Settings',           sub: 'Manage your account' }
     if (p === '/rag-study')  return { title: 'Upload Notes',       sub: 'Upload your notes or textbooks to power the Chats assistant' }

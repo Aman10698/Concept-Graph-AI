@@ -11,6 +11,7 @@ import PracticePage from './pages/PracticePage';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppLayout from './components/AppLayout';
 import MySyllabusesPage from './pages/MySyllabusesPage';
+import UploadPage from './pages/UploadPage';
 import ProfilePage from './pages/ProfilePage';
 import AboutPage from './pages/AboutPage';
 import RagStudyPage from './pages/RagStudyPage';
@@ -80,6 +81,14 @@ function AppRoutes() {
       />
       <Route
         path="/syllabuses"
+        element={
+          <ProtectedRoute>
+            <AppLayout><UploadPage /></AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/my-syllabuses"
         element={
           <ProtectedRoute>
             <AppLayout><MySyllabusesPage /></AppLayout>

@@ -156,7 +156,7 @@ export default function MySyllabusesPage() {
           <p style={{ color: '#6b7280', fontSize: '0.9rem', marginBottom: 24 }}>
             Upload a syllabus on the Learn page and it will appear here.
           </p>
-          <button onClick={() => navigate('/learn')} className="t-btn t-btn-primary">
+          <button onClick={() => navigate('/syllabuses')} className="t-btn t-btn-primary">
             Upload Syllabus →
           </button>
         </div>
@@ -274,7 +274,7 @@ export default function MySyllabusesPage() {
               ['activeSessionId', 'learningTopicsData', 'learningQuestionsData',
                 'learningEvaluationData', 'learningDependencyData']
                 .forEach(k => localStorage.removeItem(k))
-              navigate('/learn')
+              navigate('/syllabuses')
             }}
             className="t-btn t-btn-ghost t-btn-sm"
           >
