@@ -16,12 +16,15 @@
  *
  * Supported tasks:
  *   extractTopics        → { text }
+ *   extractMindMap       → { text }   ← NEW: heading-based mind map (NCERT chapters)
  *   analyzeDependencies  → { topics, docText }
  *   generateQuestions    → { topicsData, docText }
  *   evaluateAnswer       → { question, answer, topic }
  *   analyzeWeaknesses    → { evaluation, allTopics }
  *   bloomQuestions       → { concept, bloomLevel, parentTopic, n, ragContext, quizType }
  *   bloomEvaluate        → { concept, question, answer, bloomLevel, ragContext }
+ *   extractConcepts      → { text }
+ *   generatePrerequisiteEdges → { concepts }
  */
 
 'use strict';
@@ -179,6 +182,25 @@ Respond in this exact JSON format:
           payload.dependencies || [],
           payload.extractedText || ''
         );
+        succeed(result);
+        break;
+      }
+
+      case 'extractConcepts': {
+        const result = await ollamaService.extractConcepts(payload.text);
+        succeed(result);
+        break;
+      }
+
+      case 'generatePrerequisiteEdges': {
+        const result = await ollamaService.generatePrerequisiteEdges(payload.concepts);
+        succeed(result);
+        break;
+      }
+
+      // ── NEW: heading-based mind map for NCERT / chapter-style documents ──
+      case 'extractMindMap': {
+        const result = await ollamaService.extractMindMapStructure(payload.text);
         succeed(result);
         break;
       }

@@ -635,4 +635,195 @@ const buildModuleDepGraph = (moduleName, topicsData, mergedEval = {}, topicDepGr
   };
 };
 
-module.exports = { buildDepGraph, buildModuleDepGraph, scoreToStatus, normaliseTopics };
+module.exports = { buildDepGraph, buildModuleDepGraph, buildConceptDepGraph, scoreToStatus, normaliseTopics };
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TRUE PREREQUISITE GRAPH BUILDER  (new sessions only)
+   Uses session.conceptGraph (Ollama-generated nodes + edges at upload time)
+   overlaid with session.conceptMastery (live quiz scores).
+   Ollama is NOT called here — this is 100% deterministic from stored data.
+════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * buildConceptDepGraph(conceptGraph, conceptMastery)
+ *
+ * @param {{ nodes[], edges[] }} conceptGraph
+ *   nodes: [{ id, name, type, difficulty, importance }]
+ *   edges: [{ source, target, confidence }]
+ * @param {object} conceptMastery
+ *   { "concept_id": { correct, incorrect, mastery, status, lastPracticed } }
+ *
+ * @returns {{
+ *   nodes: Array — enriched nodes with status, score, parent (for DependencyGraph compat)
+ *   edges: Array — original edges passed through for DAG renderer
+ *   scores: object  — conceptId → mastery score
+ *   weakNodes: Array
+ *   rootCauses: string[] — concept NAMES of upstream root causes
+ *   recommendedPath: Array — topological order, weak/not_started first
+ *   totalCount: number
+ *   quizzedCount: number
+ * }}
+ */
+function buildConceptDepGraph(conceptGraph, conceptMastery = {}) {
+  const { nodes: rawNodes = [], edges = [] } = conceptGraph || {};
+  if (!rawNodes.length) return _emptyConceptResult();
+
+  // ── Build adjacency maps ─────────────────────────────────────────
+  const outEdges = {}; // source_id → [target_id, ...]
+  const inEdges  = {}; // target_id → [source_id, ...]
+  for (const e of edges) {
+    if (!outEdges[e.source]) outEdges[e.source] = [];
+    outEdges[e.source].push(e.target);
+    if (!inEdges[e.target]) inEdges[e.target] = [];
+    inEdges[e.target].push(e.source);
+  }
+
+  // ── Id → name map ────────────────────────────────────────────────
+  const idToName = {};
+  rawNodes.forEach(n => { idToName[n.id] = n.name; });
+
+  // ── Enrich nodes with mastery data ───────────────────────────────
+  const enriched = rawNodes.map(n => {
+    const m       = conceptMastery[n.id] || {};
+    const mastery = m.mastery ?? null;
+    const status  = mastery === null
+      ? 'not_started'
+      : mastery >= 75 ? 'strong'
+      : mastery >= 45 ? 'partial'
+      : 'weak';
+
+    // Compute a "parent" for backward compat with the tree-based DependencyGraph.
+    // For DAG nodes with multiple parents, pick the first. The new DAG renderer
+    // will use the edges[] array directly and ignore this field.
+    const parents = inEdges[n.id] || [];
+    const parentName = parents.length > 0 ? idToName[parents[0]] || 'none' : 'none';
+    const isRoot   = parents.length === 0;
+
+    return {
+      // Core fields (match DependencyGraph.jsx expectations)
+      name:        n.name,
+      status,
+      score:       mastery,
+      parent:      parentName,
+      isRoot,
+      // Concept metadata (new)
+      conceptId:   n.id,
+      type:        n.type       || 'Concept',
+      difficulty:  n.difficulty || 2,
+      importance:  n.importance || 3,
+      // description for Detail Panel
+      description: _conceptDescription(n.name, status, m),
+    };
+  });
+
+  // ── Upstream weakness propagation ────────────────────────────────
+  // For each weak/partial node, walk backwards through prerequisites.
+  // Stop at the FIRST weak ancestor (not the absolute root).
+  const weakSet = new Set(
+    enriched.filter(n => n.status === 'weak' || n.status === 'partial').map(n => n.conceptId)
+  );
+
+  const rootCauseIds = new Set();
+  for (const wId of weakSet) {
+    const found = _findNearestWeakAncestor(wId, inEdges, weakSet);
+    if (found && found !== wId) {
+      // Check that the found ancestor has no weaker prerequisite of its own
+      // (stop at first, don't cascade all the way to "Soil")
+      const grandparent = _findNearestWeakAncestor(found, inEdges, weakSet);
+      if (!grandparent || grandparent === found) {
+        rootCauseIds.add(found);
+      }
+    }
+  }
+
+  // Mark root-cause nodes
+  enriched.forEach(n => {
+    n.isRootCause = rootCauseIds.has(n.conceptId);
+  });
+
+  // ── Topological sort for learning path ───────────────────────────
+  const topoOrder   = _topoSort(rawNodes.map(n => n.id), outEdges);
+  const recommended = topoOrder
+    .map(id => enriched.find(n => n.conceptId === id))
+    .filter(n => n && (n.status === 'weak' || n.status === 'not_started' || n.status === 'partial'))
+    .map(n => ({ topic: n.name, conceptId: n.conceptId, score: n.score, status: n.status }));
+
+  // ── Scores map ───────────────────────────────────────────────────
+  const scores = {};
+  enriched.forEach(n => { if (n.score !== null) scores[n.name] = n.score; });
+
+  const nonRoot    = enriched.filter(n => !n.isRoot);
+  const totalCount = enriched.length;
+  const quizzedCount = enriched.filter(n => n.score !== null).length;
+
+  return {
+    nodes:           enriched,
+    edges,
+    scores,
+    weakNodes:       enriched.filter(n => n.status === 'weak' || n.status === 'partial'),
+    rootCauses:      [...rootCauseIds].map(id => idToName[id]).filter(Boolean),
+    recommendedPath: recommended,
+    totalCount,
+    quizzedCount,
+    avgScore: quizzedCount > 0
+      ? Math.round(enriched.filter(n=>n.score!==null).reduce((s,n)=>s+n.score,0)/quizzedCount)
+      : null,
+  };
+}
+
+/* ── Private helpers ────────────────────────────────────────────────── */
+
+/** Walk inEdges backward from `startId`, return nearest weak ancestor id or null */
+function _findNearestWeakAncestor(startId, inEdges, weakSet) {
+  const prereqs = inEdges[startId] || [];
+  for (const pid of prereqs) {
+    if (weakSet.has(pid)) return pid;
+  }
+  // One level deeper — breadth-first, stop at first hit
+  for (const pid of prereqs) {
+    const grandPrereqs = inEdges[pid] || [];
+    for (const gid of grandPrereqs) {
+      if (weakSet.has(gid)) return gid;
+    }
+  }
+  return null;
+}
+
+/** Kahn's algorithm topological sort — returns [id, ...] in prerequisite order */
+function _topoSort(ids, outEdges) {
+  // Count in-degrees
+  const inDeg = {};
+  ids.forEach(id => { inDeg[id] = 0; });
+  ids.forEach(id => {
+    for (const t of (outEdges[id] || [])) {
+      if (ids.includes(t)) inDeg[t] = (inDeg[t] || 0) + 1;
+    }
+  });
+  const queue  = ids.filter(id => inDeg[id] === 0);
+  const result = [];
+  while (queue.length) {
+    const cur = queue.shift();
+    result.push(cur);
+    for (const next of (outEdges[cur] || [])) {
+      inDeg[next]--;
+      if (inDeg[next] === 0) queue.push(next);
+    }
+  }
+  // Append any remaining (cycle leftovers)
+  ids.forEach(id => { if (!result.includes(id)) result.push(id); });
+  return result;
+}
+
+function _conceptDescription(name, status, masteryEntry = {}) {
+  const { correct = 0, incorrect = 0 } = masteryEntry;
+  const total = correct + incorrect;
+  if (status === 'strong')      return `"${name}" is well understood. Keep practising to maintain mastery.`;
+  if (status === 'partial')     return `"${name}" is partially understood (${correct}/${total} correct). Focus on the gaps.`;
+  if (status === 'weak')        return `"${name}" needs focused revision — ${incorrect} incorrect answer${incorrect !== 1 ? 's' : ''} recorded.`;
+  return `Complete a quiz on "${name}" to measure your understanding.`;
+}
+
+function _emptyConceptResult() {
+  return { nodes: [], edges: [], scores: {}, weakNodes: [], rootCauses: [], recommendedPath: [], totalCount: 0, quizzedCount: 0, avgScore: null };
+}
+

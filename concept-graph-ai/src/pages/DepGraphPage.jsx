@@ -132,19 +132,42 @@ export default function DepGraphPage() {
   useEffect(() => { loadSessions() }, [loadSessions])
 
   // When a quiz completes anywhere in the same tab, update selectedSession.evaluationData
-  // so the module progress bars and subtopic chips re-render immediately
+  // so the module progress bars and subtopic chips re-render immediately.
+  // Also patch the sessions list so the Step-1 progress bar updates without a refetch.
   useEffect(() => {
     const onEval = () => {
       try {
         const raw = localStorage.getItem('learningEvaluationData')
         if (!raw) return
         const newEval = JSON.parse(raw)
-        setSelectedSession(prev => prev ? { ...prev, evaluationData: newEval } : prev)
+        setSelectedSession(prev => {
+          if (!prev) return prev
+          // Recalculate masteredCount / progress from the merged eval
+          const merged = { ...(prev.evaluationData || {}), ...newEval }
+          const topicCount = prev.topicCount || Object.keys(merged).length
+          const masteredCount = Object.values(merged).filter(e => e?.rating === 'strong' || (e?.score != null && e.score >= 75)).length
+          const progress = topicCount > 0 ? Math.round((masteredCount / topicCount) * 100) : 0
+          return { ...prev, evaluationData: merged, masteredCount, progress }
+        })
+        // Also update the syllabus-list card so Step-1 progress bar reflects the new score
+        setSessions(prev => prev.map(s => {
+          if (s.sessionId !== localStorage.getItem('activeSessionId') &&
+              !selectedSession?.sessionId) return s
+          // Only patch the currently-selected session's card
+          const evalForSession = JSON.parse(raw)
+          const masteredCount = Object.values(evalForSession).filter(e => e?.rating === 'strong' || (e?.score != null && e.score >= 75)).length
+          const topicCount = s.topicCount || Object.keys(evalForSession).length
+          const progress = topicCount > 0 ? Math.round((masteredCount / topicCount) * 100) : 0
+          return s.sessionId === selectedSession?.sessionId
+            ? { ...s, masteredCount, progress }
+            : s
+        }))
       } catch { /* ignore */ }
     }
     onEvalChange(onEval)
     return () => offEvalChange(onEval)
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSession?.sessionId])
 
   // React immediately when any syllabus is deleted from MySyllabusesPage
   useEffect(() => {
@@ -281,12 +304,31 @@ export default function DepGraphPage() {
     const newDepGraphs = { ...topicDepGraphs, [concept]: entry }
     setTopicDepGraphs(newDepGraphs)
 
-    // ── 2. Also write to evaluationData so the MIND MAP updates too ─
+    // ── 2. Also write to evaluationData so the MIND MAP + progress bars update ─
     const evalEntry = { rating, score, practicedAt: now }
     const existingEval = JSON.parse(localStorage.getItem('learningEvaluationData') || '{}')
     const newEval = { ...existingEval, [concept]: evalEntry }
-    // Use setEvalStorage so Dashboard and other pages update immediately in the same tab
+    // Use setEvalStorage so Dashboard and other pages update immediately in the same tab.
+    // This also fires the onEval listener above, which patches sessions[] for Step-1 bars.
     setEvalStorage('learningEvaluationData', JSON.stringify(newEval))
+
+    // ── 3. Patch selectedSession + sessions list immediately (no refetch needed) ─
+    const masteredCount = Object.values(newEval).filter(e => e?.rating === 'strong' || (e?.score != null && e.score >= 75)).length
+    const topicCount = selectedSession.topicCount || Object.keys(newEval).length
+    const progress = topicCount > 0 ? Math.round((masteredCount / topicCount) * 100) : 0
+
+    setSelectedSession(prev => prev ? {
+      ...prev,
+      evaluationData: newEval,
+      masteredCount,
+      progress,
+    } : prev)
+
+    setSessions(prev => prev.map(s =>
+      s.sessionId === selectedSession.sessionId
+        ? { ...s, masteredCount, progress }
+        : s
+    ))
 
     try {
       // Persist dep-graph data
@@ -864,6 +906,7 @@ export default function DepGraphPage() {
             ) : graphData?.nodes?.length > 0 ? (
               <DependencyGraph
                 nodes={graphData.nodes}
+                edges={graphData.isConceptMode && graphData.edges ? graphData.edges : null}
                 graphData={graphData}
                 topicName={selectedSection}
                 weaknessData={weaknessData}

@@ -64,7 +64,6 @@ export default function DependencyGraphPage() {
             error={null}
           />
         </div>
-        </div>
       ) : (
         /* Empty state */
         <div className="t-card" style={{ textAlign: 'center', padding: '64px 32px' }}>

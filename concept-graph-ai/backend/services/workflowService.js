@@ -1,12 +1,14 @@
 /**
  * Workflow Orchestration Service
  *
- * GEMINI AI-POWERED PIPELINE
- * Every step calls Gemini — zero rule-based fallbacks in the happy path.
+ * OLLAMA AI-POWERED PIPELINE
+ * Every step calls Ollama — zero rule-based fallbacks in the happy path.
  *
  * Flow:
- * Upload → Extract Text → [Gemini] Topics → [Gemini] Dependencies → Graph → Save
- * Quiz:    [Gemini] Questions → Student Answers → [Gemini] Evaluate → [Gemini] Weakness → Save
+ * Upload → Extract Text → [Ollama] Topics → [Ollama] Dependencies → Graph → Save
+ *                        → [Ollama] ConceptGraph (atomic concepts + prereq edges)
+ *                        → [Ollama] MindMap     (heading hierarchy — NCERT mode)
+ * Quiz:    [Ollama] Questions → Student Answers → [Ollama] Evaluate → [Ollama] Weakness → Save
  */
 
 const textExtractionService   = require('./textExtractionService');
@@ -16,6 +18,7 @@ const answerEvaluationService = require('./answerEvaluationService');
 const dependencyAnalysisService = require('./dependencyAnalysisService');
 const weaknessAnalysisService = require('./weaknessAnalysisService');
 const mongoService            = require('./mongoService');
+const conceptGraphService     = require('./conceptGraphService');
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PHASE 1: Document Processing Workflow
@@ -115,38 +118,71 @@ const processingWorkflow = {
     // 1. Extract text
     const extractResult = await processingWorkflow.extractText(filePath, mimeType);
 
-    // 2. Gemini: topics
-    const topicsResult = await processingWorkflow.extractTopics(extractResult.text);
+    // 2. Run ALL three pipelines concurrently:
+    //    A) Concept graph pipeline  (atomic concepts + prerequisite edges)
+    //    B) Mind map pipeline       (heading hierarchy, NCERT/chapter mode) ← NEW
+    //    C) Legacy topic extraction (for backward compat + question generation)
+    console.log('\n⚡ Running concept graph + mind map + topic extraction in parallel...');
+    const [conceptGraphResult, mindMapResult, topicsResult] = await Promise.allSettled([
+      conceptGraphService.buildConceptGraph(extractResult.text),
+      conceptGraphService.buildMindMap(extractResult.text),      // ← NEW
+      processingWorkflow.extractTopics(extractResult.text),
+    ]);
+
+    const { conceptGraph, topicsDataCompat } =
+      conceptGraphResult.status === 'fulfilled' ? conceptGraphResult.value : { conceptGraph: null, topicsDataCompat: null };
+
+    // Unwrap mind map result
+    const { mindMap } =
+      mindMapResult.status === 'fulfilled' ? mindMapResult.value : { mindMap: null };
+
+    const topicsData = topicsResult.status === 'fulfilled'
+      ? topicsResult.value
+      : { topics: [], topicsData: topicsDataCompat?.topics || [], subject: '', summary: '', keyTerms: [], relationships: [] };
+
+    if (conceptGraph) {
+      console.log(`✅ Concept graph ready: ${conceptGraph.nodes.length} concepts, ${conceptGraph.edges.length} edges`);
+    } else {
+      console.warn('⚠️  Concept graph failed — session will use legacy graph only');
+    }
+
+    if (mindMap) {
+      console.log(`✅ Mind map ready: ${mindMap.nodes.length} nodes, ${mindMap.edges.length} edges — "${mindMap.chapterTitle}"`);
+    } else {
+      console.warn('⚠️  Mind map failed — session will not have heading-based map');
+    }
 
     // 3. Gemini: dependencies (pass full text for context)
     const depsResult = await processingWorkflow.analyzeDependencies(
-      topicsResult.topicsData.length > 0 ? topicsResult.topicsData : topicsResult.topics,
+      topicsData.topicsData?.length > 0 ? topicsData.topicsData : topicsData.topics,
       extractResult.text
     );
 
     // 4. Build graph
     const graphResult = await processingWorkflow.createGraph(
-      topicsResult.topicsData.length > 0 ? topicsResult.topicsData : topicsResult.topics,
+      topicsData.topicsData?.length > 0 ? topicsData.topicsData : topicsData.topics,
       depsResult.relationships,
-      topicsResult.subject
+      topicsData.subject
     );
 
     // 5. Save to MongoDB
     console.log('\n💾 STEP 5: Saving to database...');
     const saveResult = await mongoService.saveGraphData(userId, {
-      fileName:         filePath.split(/[/\\]/).pop(),
+      fileName:         filePath.split(/[\/\\]/).pop(),
       text:             extractResult.text.substring(0, 10000),
-      topics:           topicsResult.topics,
-      topicsData:       topicsResult.topicsData,
-      subject:          topicsResult.subject,
-      summary:          topicsResult.summary,
-      keyTerms:         topicsResult.keyTerms,
+      topics:           topicsData.topics,
+      topicsData:       topicsData.topicsData,
+      subject:          topicsData.subject,
+      summary:          topicsData.summary,
+      keyTerms:         topicsData.keyTerms,
       relationships:    depsResult.relationships,
       recommendedOrder: depsResult.recommendedOrder,
       criticalPath:     depsResult.criticalPath,
       graph:            graphResult.graph,
+      conceptGraph:     conceptGraph || null,
+      mindMap:          mindMap      || null,   // ← NEW
       textStats:        extractResult.stats,
-      topicsDataStr:    topicsResult.topics.join(', '),
+      topicsDataStr:    (topicsData.topics || []).join(', '),
       extractedText:    extractResult.text.substring(0, 1000),
     });
     console.log('✅ Data saved successfully');
@@ -158,21 +194,24 @@ const processingWorkflow = {
       phase: 'processing',
       data: {
         text:             extractResult.text,
-        topics:           topicsResult.topics,
-        topicsData:       topicsResult.topicsData,
-        subject:          topicsResult.subject,
-        summary:          topicsResult.summary,
-        keyTerms:         topicsResult.keyTerms,
+        topics:           topicsData.topics,
+        topicsData:       topicsData.topicsData,
+        subject:          topicsData.subject,
+        summary:          topicsData.summary,
+        keyTerms:         topicsData.keyTerms,
         relationships:    depsResult.relationships,
         recommendedOrder: depsResult.recommendedOrder,
         criticalPath:     depsResult.criticalPath,
         graph:            graphResult.graph,
+        conceptGraph:     conceptGraph || null,
+        mindMap:          mindMap      || null,   // ← NEW
         graphId:          saveResult.id,
       },
       summary: {
         textLength:          extractResult.stats.length,
-        topicsCount:         topicsResult.stats.count,
+        topicsCount:         topicsData.topics?.length ?? 0,
         relationshipsCount:  depsResult.stats.count,
+        mindMapNodes:        mindMap?.nodes?.length ?? 0,   // ← NEW
         savedAt:             saveResult.timestamp,
       },
     };

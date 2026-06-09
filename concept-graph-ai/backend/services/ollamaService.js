@@ -5,13 +5,13 @@
  * so no other file needs to change.
  */
 
-const OLLAMA_BASE = process.env.OLLAMA_URL  || 'http://localhost:11434';
+const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.1';
 
 /* ─── low-level generate call ───────────────────────────────────────────── */
 const generateText = async (prompt, options = {}) => {
   const body = {
-    model:  options.model || OLLAMA_MODEL,
+    model: options.model || OLLAMA_MODEL,
     prompt,
     stream: false,
     // ⚠️  context: null suppresses Ollama's token-context array in the response.
@@ -20,16 +20,16 @@ const generateText = async (prompt, options = {}) => {
     // accumulates rapidly in the worker heap when making many sequential calls.
     context: null,
     options: {
-      temperature:  options.temperature ?? 0.6,
-      num_predict:  options.numPredict  ?? 800,  // cap default; callers set higher if needed
-      top_p:        options.topP        ?? 0.9,
+      temperature: options.temperature ?? 0.6,
+      num_predict: options.numPredict ?? 800,  // cap default; callers set higher if needed
+      top_p: options.topP ?? 0.9,
     },
   };
 
   const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
-    method:  'POST',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -67,6 +67,66 @@ const extractJSON = (text) => {
   const match = stripped.match(/\{[\s\S]*\}/);
   if (match) { try { return JSON.parse(match[0]); } catch (_) { /* fall through */ } }
   return null;
+};
+
+/* ─── Heading outline pre-extractor ──────────────────────────────────────────────
+ * Converts raw chapter text into a compact heading-only outline (~1–3 KB).
+ * Used by extractMindMapStructure and extractConcepts to reduce the number
+ * of tokens sent to Ollama by 90 % without losing any structural information.
+ * Body paragraphs are discarded — the LLM ignores them for graph building.
+ ────────────────────────────────────────────────────────────── */
+const extractHeadingOutline = (text) => {
+  const lines = text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length >= 2);
+
+  const NOISE = [
+    /^(let'?s\s+(do|think|discuss|recall|explore))/i,
+    /^do\s+this/i,
+    /^activity\b/i,
+    /^exercise\b/i,
+    /^questions?$/i,
+    /^note\s*:/i,
+    /^figure\b/i,
+    /^table\b/i,
+    /^example\b/i,
+    /^story\b/i,
+    /^dialogue\b/i,
+    /^introduction$/i,
+    /^conclusion$/i,
+    /^references?$/i,
+  ];
+  const isNoiseLine = (l) => NOISE.some(rx => rx.test(l));
+
+  const isHeading = (l) => {
+    if (l.length > 80) return false;          // too long — likely a sentence
+    if (isNoiseLine(l)) return false;
+    if (/^\d+(\.\d+)*\.?\s+\S/.test(l)) return true;  // numbered: "1.", "1.1", "2.3.4"
+    if (/^[A-Z][A-Z\s]{3,}$/.test(l)) return true;    // ALL CAPS heading
+    if (/^[A-Z][a-z].*[a-z]$/.test(l) && l.length <= 60) return true; // Title case, short
+    if (/^[\u2022\-*]\s+\S/.test(l) && l.length <= 60) return true;    // short bullet/list item
+    return false;
+  };
+
+  const outline = [];
+  let charCount = 0;
+  const MAX_OUTLINE_CHARS = 3000;
+
+  for (const line of lines) {
+    if (charCount >= MAX_OUTLINE_CHARS) break;
+    if (!isHeading(line)) continue;
+    outline.push(line);
+    charCount += line.length + 1;
+  }
+
+  // Always prepend the very first line (document title)
+  if (outline.length === 0 || outline[0] !== lines[0]) {
+    outline.unshift(lines[0] || '');
+  }
+
+  return outline.join('\n');
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -145,234 +205,237 @@ const deduplicateTopics = (topics) => {
     }),
   }));
 
-  // Step 4: Remove topic nodes that ended up with no subtopics
-  return result.filter(t => (t.subtopics || []).length > 0);
+  // Keep ALL topics — even those that end up with no subtopics — so they render in the mind map
+  return result;
+};
+
+/* ─── helpers for new prompt output ────────────────────────────────────── */
+
+/**
+ * Convert the flat { nodes[], edges[] } format returned by the prompt
+ * back into the nested { topics: [{ name, subtopics[] }] } format.
+ */
+const flatNodesToTopicsData = (nodes, edges) => {
+  // Build adjacency: parentId → [childId, ...]
+  const children = {};
+  for (const e of (edges || [])) {
+    if (!children[e.source]) children[e.source] = [];
+    children[e.source].push(e.target);
+  }
+
+  const nodeMap = {};
+  for (const n of (nodes || [])) nodeMap[n.id] = n;
+
+  // Find root nodes (not a target in any edge)
+  const targetIds = new Set((edges || []).map(e => e.target));
+  const rootIds = (nodes || []).map(n => n.id).filter(id => !targetIds.has(id));
+
+  const buildSubtopics = (id, depth = 0) => {
+    if (depth > 5) return [];
+    const kids = children[id] || []; // NO artificial child limit
+    return kids.map(cid => ({
+      name: nodeMap[cid]?.label || cid,
+      subtopics: buildSubtopics(cid, depth + 1),
+    }));
+  };
+
+  // If there's exactly one root, treat its children as top-level topics (modules)
+  if (rootIds.length === 1) {
+    const rootId = rootIds[0];
+    const rootNode = nodeMap[rootId];
+    const topLevel = children[rootId] || []; // NO artificial limit
+    if (topLevel.length > 0) {
+      return {
+        chapterTitle: rootNode?.label || '',
+        topics: topLevel.map(id => ({
+          name: nodeMap[id]?.label || id,
+          description: '',
+          subtopics: buildSubtopics(id, 1),
+        })),
+      };
+    }
+    return {
+      chapterTitle: rootNode?.label || '',
+      topics: [{ name: rootNode?.label || 'Chapter', description: '', subtopics: [] }],
+    };
+  }
+
+  // Multiple roots — each root is a top-level topic
+  return {
+    chapterTitle: '',
+    topics: rootIds.map(id => ({
+      name: nodeMap[id]?.label || id,
+      description: '',
+      subtopics: buildSubtopics(id, 1),
+    })),
+  };
 };
 
 const extractTopicsAdvanced = async (text) => {
-  // 24 000 chars ≈ 7-8 PDF pages — captures rich chapters fully
-  const doc = text.replace(/\s+/g, ' ').trim().slice(0, 24000);
+  // 40 000 chars ≈ 12–15 PDF pages — enough for a full 5-module syllabus
+  const doc = text.replace(/\s+/g, ' ').trim().slice(0, 40000);
 
-  const prompt = `You are extracting a knowledge tree from an educational document (textbook chapter, lecture notes, or syllabus).
+  // ── Syllabus-aware prompt ─────────────────────────────────────────────────
+  // This prompt is specifically designed for university syllabi that have
+  // multiple modules/units, each containing several topics and subtopics.
+  const prompt = `You are an expert academic syllabus analyzer.
+Your ONLY job is to extract the complete topic hierarchy from the given syllabus text.
 
-DOCUMENT:
+CRITICAL INSTRUCTIONS:
+1. Find EVERY module/unit in the syllabus (there are usually 3–6 modules).
+2. Under each module, list EVERY topic and subtopic mentioned.
+3. DO NOT skip any module. DO NOT skip any topic.
+4. The root node = the course/subject name.
+5. Level 1 = Module names (e.g. "Module 1: Cloud Computing", "Unit 2: Virtualization").
+6. Level 2 = Topics inside each module.
+7. Level 3 = Sub-topics or specific items listed under a topic.
+8. Keep labels concise (≤ 6 words). Use Title Case.
+9. Return ONLY valid JSON — no markdown, no explanation.
+
+Output format (follow EXACTLY):
+{
+  "subject": "Full Course Name",
+  "summary": "One sentence course overview.",
+  "nodes": [
+    { "id": "root", "label": "Course Name", "level": 0 },
+    { "id": "m1", "label": "Module 1: Name", "level": 1 },
+    { "id": "m1t1", "label": "Topic Name", "level": 2 },
+    { "id": "m1t1s1", "label": "Sub-topic", "level": 3 }
+  ],
+  "edges": [
+    { "source": "root", "target": "m1" },
+    { "source": "m1", "target": "m1t1" },
+    { "source": "m1t1", "target": "m1t1s1" }
+  ],
+  "keyTerms": []
+}
+
+Rules:
+- Every module MUST appear as a level-1 node connected to root.
+- Every topic under a module MUST appear as a level-2 node connected to its module.
+- Use unique ids (e.g. m1, m1t1, m1t2, m2, m2t1...).
+- Do NOT include: course outcomes, assessment schemes, references, exam patterns, faculty info.
+- Do NOT limit yourself to 8 children — include ALL topics for each module.
+
+SYLLABUS TEXT:
 ---
 ${doc}
 ---
 
-════════════════════════════════════════════════
-RULE 1 — IDENTIFY TOP-LEVEL TOPICS
-════════════════════════════════════════════════
-Scan the document for EVERY numbered section, heading, or major topic.
+Return ONLY the JSON object. No other text. Include ALL modules and ALL their topics.`;
 
-• If the document is a CHAPTER (e.g. "Crop Production and Management"):
-  Each numbered section inside the chapter (1. Agricultural Practices, 2. Preparation of Soil, 3. Sowing ...) is its OWN separate top-level topic.
-
-• If the document is a SYLLABUS (e.g. "B.Tech Cloud Computing Syllabus"):
-  Each Module / Unit (Module 1, Module 2 ...) is a top-level topic.
-
-CRITICAL: Do NOT group multiple numbered sections under an artificial parent.
-  ❌ WRONG: { name: "Crop Production", subtopics: ["Irrigation", "Harvesting", "Sowing"] }
-  ✓ RIGHT:  Separate top-level topics: "Irrigation", "Harvesting", "Sowing"
-
-════════════════════════════════════════════════
-RULE 2 — EXTRACT SUBTOPICS AT EVERY DEPTH
-════════════════════════════════════════════════
-For EACH top-level topic, extract its internal structure:
-
-  Depth 1 (top-level): "5. Irrigation"
-  Depth 2 (sub-section): "5.1 Sources", "5.2 Traditional Methods", "5.3 Modern Methods"
-  Depth 3 (leaf items): under "5.2 Traditional Methods" → "Moat", "Chain Pump", "Dhekli", "Rahat"
-  Depth 4 (if present): any further breakdown under depth-3 items
-
-Rules:
-• Capture EVERY named item: crop names, tool names, chemical names, technique names, species.
-• Do NOT flatten — preserve the nesting depth shown in the document.
-• Do NOT invent content — only use what the document explicitly states.
-• Keep names concise (≤ 60 chars).
-
-════════════════════════════════════════════════
-RULE 3 — COUNT CHECK
-════════════════════════════════════════════════
-Before outputting, count how many numbered sections you found.
-If the document has sections "1." through "8.", your topics array MUST have 8 entries — one per section.
-
-════════════════════════════════════════════════
-FULL EXAMPLE (Crop Production chapter → 8 topics)
-════════════════════════════════════════════════
-{
-  "topics": [
-    {
-      "name": "Agricultural Practices",
-      "subtopics": [
-        { "name": "Agriculture", "subtopics": [] },
-        { "name": "Crop", "subtopics": [] },
-        { "name": "Types of Crops", "subtopics": [
-          { "name": "Kharif Crops", "subtopics": [] },
-          { "name": "Rabi Crops", "subtopics": [] }
-        ]}
-      ]
-    },
-    {
-      "name": "Preparation of Soil",
-      "subtopics": [
-        { "name": "Tilling / Ploughing", "subtopics": [] },
-        { "name": "Loosening of Soil", "subtopics": [] },
-        { "name": "Levelling", "subtopics": [] },
-        { "name": "Agricultural Implements", "subtopics": [
-          { "name": "Plough", "subtopics": [] },
-          { "name": "Hoe", "subtopics": [] },
-          { "name": "Cultivator", "subtopics": [] }
-        ]}
-      ]
-    },
-    {
-      "name": "Sowing",
-      "subtopics": [
-        { "name": "Selection of Seeds", "subtopics": [] },
-        { "name": "Traditional Sowing Tool", "subtopics": [] },
-        { "name": "Seed Drill", "subtopics": [] },
-        { "name": "Nursery and Transplantation", "subtopics": [] }
-      ]
-    },
-    {
-      "name": "Adding Manure and Fertilisers",
-      "subtopics": [
-        { "name": "Manure", "subtopics": [] },
-        { "name": "Fertilisers", "subtopics": [] },
-        { "name": "Crop Rotation", "subtopics": [] },
-        { "name": "Nitrogen Fixation (Rhizobium)", "subtopics": [] }
-      ]
-    },
-    {
-      "name": "Irrigation",
-      "subtopics": [
-        { "name": "Sources of Irrigation", "subtopics": [] },
-        { "name": "Traditional Methods", "subtopics": [
-          { "name": "Moat", "subtopics": [] },
-          { "name": "Chain Pump", "subtopics": [] },
-          { "name": "Dhekli", "subtopics": [] },
-          { "name": "Rahat", "subtopics": [] }
-        ]},
-        { "name": "Modern Methods", "subtopics": [
-          { "name": "Sprinkler System", "subtopics": [] },
-          { "name": "Drip System", "subtopics": [] }
-        ]}
-      ]
-    },
-    {
-      "name": "Protection from Weeds",
-      "subtopics": [
-        { "name": "Weeds", "subtopics": [] },
-        { "name": "Weeding", "subtopics": [] },
-        { "name": "Weedicides (e.g. 2,4-D)", "subtopics": [] }
-      ]
-    },
-    {
-      "name": "Harvesting",
-      "subtopics": [
-        { "name": "Harvesting", "subtopics": [] },
-        { "name": "Threshing", "subtopics": [] },
-        { "name": "Harvest Festivals", "subtopics": [] }
-      ]
-    },
-    {
-      "name": "Storage",
-      "subtopics": [
-        { "name": "Drying of Grains", "subtopics": [] },
-        { "name": "Winnowing", "subtopics": [] },
-        { "name": "Storage Methods", "subtopics": [
-          { "name": "Jute Bags", "subtopics": [] },
-          { "name": "Metallic Bins", "subtopics": [] },
-          { "name": "Silos", "subtopics": [] },
-          { "name": "Granaries", "subtopics": [] }
-        ]}
-      ]
-    }
-  ]
-}
-
-════════════════════════════════════════════════
-NOW EXTRACT FROM THE ACTUAL DOCUMENT ABOVE
-════════════════════════════════════════════════
-Follow the SAME pattern as the example, but use the content from the document.
-Respond ONLY with valid JSON — no markdown fences, no explanation, nothing else.
-
-{
-  "subject": "Name of the subject or chapter",
-  "summary": "2-3 sentence overview of what the document covers",
-  "topics": [
-    {
-      "name": "Section name exactly as in the document",
-      "description": "One sentence about this section",
-      "subtopics": []
-    }
-  ],
-  "relationships": [],
-  "keyTerms": []
-}`;
-
-  // ── Admin-section filter ────────────────────────────────────────────────
-  // These patterns match section names that are purely syllabus metadata and
-  // contain no actual learning content.  Applied AFTER the LLM extracts so we
-  // don't accidentally over-restrict the model's extraction.
+  // ── Admin-section filter ─────────────────────────────────────────────────
   const ADMIN_PATTERNS = [
-    /^course\s+outcome/i,
-    /^learning\s+objective/i,
-    /\bco\d+\b/i,                          // "CO1", "CO2", …
-    /^modes?\s+of\s+eval/i,
-    /^assessment\s+scheme/i,
-    /^examination\s+(scheme|pattern)/i,
-    /^evaluation\s+scheme/i,
-    /^activities?\s*(&|and)?\s*exercises?/i,
-    /^references?$/i,
-    /^bibliography/i,
-    /^attendance/i,
-    /^credits?\s*(hours?)?$/i,
-    /^faculty\s+info/i,
-    /^components?$/i,                      // bare "Components" from eval schemes
-    /^quiz\s*\/?\s*assignment/i,
-    /^seminar/i,
-    /^written\s+exam/i,
+    /^course\s+outcome/i, /^learning\s+objective/i, /\bco\d+\b/i,
+    /^modes?\s+of\s+eval/i, /^assessment\s+scheme/i,
+    /^examination\s+(scheme|pattern)/i, /^evaluation\s+scheme/i,
+    /^activities?\s*(&|and)?\s*exercises?/i, /^references?$/i,
+    /^bibliography/i, /^attendance/i, /^credits?\s*(hours?)?$/i,
+    /^faculty\s+info/i, /^components?$/i, /^quiz\s*\/?s*assignment/i,
+    /^seminar/i, /^written\s+exam/i,
+    /^let'?s\s+(do|think|discuss)/i, /^do\s+this/i, /^activity/i,
+    /^exercise/i, /^questions?$/i, /^textual\s+question/i,
+    /^additional\s+question/i, /^summary$/i, /^glossary$/i,
+    /^further\s+reading/i,
   ];
 
-  const isAdminSection = (name) =>
-    ADMIN_PATTERNS.some(rx => rx.test((name || '').trim()));
+  const isAdminSection = (label) =>
+    ADMIN_PATTERNS.some(rx => rx.test((label || '').trim()));
+
+  // Strip course codes like "IFT4528", "CS-101", "ECE 302" from subject names and root labels
+  const stripCourseCode = (str) =>
+    (str || '')
+      .replace(/^[A-Z]{2,6}[-\s]?\d{3,6}\s*/i, '')  // e.g. IFT4528, CS101, ECE-302
+      .replace(/^\d{3,6}[A-Z]{0,4}\s*/i, '')          // e.g. 101CS at start
+      .trim() || str;
+
+  // Clean up trailing punctuation from node labels (commas, colons leftover from PDF parsing)
+  const cleanLabel = (label) =>
+    (label || '').replace(/[,;:]+$/, '').trim();
 
   try {
-    // 12 000 tokens — large prompt (with example) + deep nested JSON output for 8+ topics
-    const raw    = await generateText(prompt, { temperature: 0.1, numPredict: 12000 });
+    // 16 000 tokens — enough for full syllabus output with all modules
+    const raw = await generateText(prompt, { temperature: 0.1, numPredict: 16000 });
     const parsed = extractJSON(raw);
-    if (!parsed || !Array.isArray(parsed.topics) || parsed.topics.length === 0)
-      throw new Error('Invalid topic structure from Ollama');
 
-    // Normalise subtopics at all levels: strings → { name, subtopics: [] }
-    const normaliseSubtopics = (subs) => {
-      if (!Array.isArray(subs)) return [];
-      return subs.map(s => {
-        if (typeof s === 'string') return { name: s, subtopics: [] };
-        if (typeof s === 'object' && s.name) {
-          return { ...s, subtopics: normaliseSubtopics(s.subtopics || []) };
-        }
-        return null;
-      }).filter(Boolean);
-    };
+    // ── Handle nodes/edges format ──────────────────────────────────────────
+    if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length > 0) {
+      // Filter out admin/noise nodes
+      parsed.nodes = parsed.nodes.filter(n => !isAdminSection(n.label));
 
-    parsed.topics = parsed.topics
-      .map(t => ({
-        ...t,
-        subtopics: normaliseSubtopics(t.subtopics || []),
-      }))
-      // deduplicate by name
-      .filter((t, i, arr) => arr.findIndex(x => x.name?.toLowerCase() === t.name?.toLowerCase()) === i)
-      // remove purely administrative sections (e.g. Course Outcomes, Modes of Evaluation)
-      .filter(t => !isAdminSection(t.name));
+      // Enforce label length (≤ 8 words), strip course codes and trailing punctuation
+      parsed.nodes = parsed.nodes.map(n => ({
+        ...n,
+        label: cleanLabel(
+          n.level === 0
+            ? stripCourseCode((n.label || '').split(/\s+/).slice(0, 8).join(' '))
+            : (n.label || '').split(/\s+/).slice(0, 8).join(' ')
+        ),
+      }));
 
-    console.log(`✅ Ollama extracted ${parsed.topics.length} topics (nested, after dedup + admin filter)`);
-    return parsed;
+      // Remove edges whose source or target no longer exists
+      const validIds = new Set(parsed.nodes.map(n => n.id));
+      parsed.edges = (parsed.edges || []).filter(
+        e => validIds.has(e.source) && validIds.has(e.target)
+      );
+
+      // Convert flat nodes/edges → nested topics[]
+      const { chapterTitle, topics } = flatNodesToTopicsData(parsed.nodes, parsed.edges);
+
+      // Deduplicate topics by name (keep first occurrence)
+      const dedupedTopics = topics
+        .filter((t, i, arr) => arr.findIndex(x => x.name?.toLowerCase() === t.name?.toLowerCase()) === i)
+        .filter(t => !isAdminSection(t.name));
+
+      console.log(`✅ Ollama extracted ${dedupedTopics.length} modules/topics from ${parsed.nodes.length} nodes`);
+
+      // Guard: if all filtered out, use raw level-1 nodes
+      const finalTopics = dedupedTopics.length > 0
+        ? dedupedTopics
+        : parsed.nodes
+          .filter(n => n.level > 0 && !isAdminSection(n.label))
+          .map(n => ({ name: n.label, description: '', subtopics: [] }));
+
+      return {
+        subject: stripCourseCode(parsed.subject || chapterTitle || ''),
+        summary: parsed.summary || '',
+        topics: finalTopics,
+        relationships: [],
+        keyTerms: parsed.keyTerms || [],
+        // Also expose the raw graph for any callers that want React Flow data directly
+        graphNodes: parsed.nodes,
+        graphEdges: parsed.edges,
+      };
+    }
+
+    // ── Fallback: old nested topics[] format (model didn't follow new schema) ─
+    if (parsed && Array.isArray(parsed.topics) && parsed.topics.length > 0) {
+      const normaliseSubtopics = (subs) => {
+        if (!Array.isArray(subs)) return [];
+        return subs.map(s => {
+          if (typeof s === 'string') return { name: s, subtopics: [] };
+          if (typeof s === 'object' && s.name) {
+            return { ...s, subtopics: normaliseSubtopics(s.subtopics || []) };
+          }
+          return null;
+        }).filter(Boolean);
+      };
+
+      parsed.topics = parsed.topics
+        .map(t => ({ ...t, subtopics: normaliseSubtopics(t.subtopics || []) }))
+        .filter((t, i, arr) => arr.findIndex(x => x.name?.toLowerCase() === t.name?.toLowerCase()) === i)
+        .filter(t => !isAdminSection(t.name));
+
+      console.log(`✅ Ollama extracted ${parsed.topics.length} topics (legacy nested format)`);
+      return parsed;
+    }
+
+    throw new Error('Ollama returned neither nodes[] nor topics[] — invalid structure');
+
   } catch (err) {
+    // Re-throw so topicController can catch it and properly log/fallback
     console.error('extractTopicsAdvanced error:', err.message);
-    return { topics: [], relationships: [], summary: '', keyTerms: [] };
+    throw err;
   }
 };
 
@@ -381,9 +444,9 @@ Respond ONLY with valid JSON — no markdown fences, no explanation, nothing els
 ══════════════════════════════════════════════════════════════════════════════ */
 const generateDocumentQuestions = async (topicObjects, docSnippet, questionsPerTopic = 3, seed = 0) => {
   const topicList = topicObjects.map(t => typeof t === 'string' ? { name: t } : t);
-  const hasDoc    = docSnippet && docSnippet.trim().length > 50;
-  const docCtx    = hasDoc ? docSnippet.slice(0, 2000) : '';
-  const topics    = topicList;
+  const hasDoc = docSnippet && docSnippet.trim().length > 50;
+  const docCtx = hasDoc ? docSnippet.slice(0, 2000) : '';
+  const topics = topicList;
   const qPerTopic = Math.max(1, questionsPerTopic);
 
   const ANGLES = [
@@ -408,12 +471,12 @@ const generateDocumentQuestions = async (topicObjects, docSnippet, questionsPerT
     const batch = topics.slice(i, i + BATCH_SIZE);
 
     const batchPromises = batch.map(async (topicObj) => {
-      const topicName   = topicObj.name;
+      const topicName = topicObj.name;
       const parentTopic = topicObj.parentTopic || null;
-      const subject     = topicObj.subject     || null;
+      const subject = topicObj.subject || null;
 
       const contextLine = [
-        subject     && `Subject: "${subject}"`,
+        subject && `Subject: "${subject}"`,
         parentTopic && `Parent topic: "${parentTopic}"`,
         `Topic: "${topicName}"`,
       ].filter(Boolean).join(' | ');
@@ -439,7 +502,7 @@ Now write the ${qPerTopic} question${qPerTopic > 1 ? 's' : ''} about "${topicNam
 
       try {
         const raw = await generateText(prompt, { temperature: 0.65, numPredict: 150 * qPerTopic });
-        const qs  = parseQuestions(raw, topicName, qPerTopic, parentTopic);
+        const qs = parseQuestions(raw, topicName, qPerTopic, parentTopic);
         console.log(`  ${qs.length > 0 ? '✅' : '⚠️ '} ${topicName}: ${qs.length} questions`);
         return qs;
       } catch (err) {
@@ -460,28 +523,28 @@ Now write the ${qPerTopic} question${qPerTopic > 1 ? 's' : ''} about "${topicNam
 
 
 const parseQuestions = (raw, topicName, limit = 3, parentTopic = null) => {
-  const TYPE_MAP  = ['comparison', 'application', 'analysis', 'evaluation', 'synthesis'];
+  const TYPE_MAP = ['comparison', 'application', 'analysis', 'evaluation', 'synthesis'];
   const questions = [];
-  const seen      = new Set();
+  const seen = new Set();
 
   for (const line of raw.split('\n')) {
     const m = line.match(/^\s*(\d{1,2})[.)\s]\s*(.+)/);
     if (!m) continue;
     const idx = parseInt(m[1], 10) - 1;
-    const q   = m[2].trim().replace(/\*\*/g, '').replace(/^[\*_]+|[\*_]+$/g, '').trim();
+    const q = m[2].trim().replace(/\*\*/g, '').replace(/^[\*_]+|[\*_]+$/g, '').trim();
     if (q.length < 25 || !q.includes('?')) continue;
     const key = q.slice(0, 60).toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
 
     questions.push({
-      id:          `ollama-${topicName}-${questions.length}`,
-      question:    q,
-      type:        TYPE_MAP[idx % TYPE_MAP.length] ?? 'analysis',
-      topic:       topicName,
+      id: `ollama-${topicName}-${questions.length}`,
+      question: q,
+      type: TYPE_MAP[idx % TYPE_MAP.length] ?? 'analysis',
+      topic: topicName,
       parentTopic: parentTopic || undefined,
-      difficulty:  idx < 1 ? 'beginner' : idx < 2 ? 'intermediate' : 'advanced',
-      source:      'ollama',
+      difficulty: idx < 1 ? 'beginner' : idx < 2 ? 'intermediate' : 'advanced',
+      source: 'ollama',
     });
 
     if (questions.length >= limit) break;
@@ -527,28 +590,28 @@ Respond ONLY with valid JSON (no markdown):
 }`;
 
   try {
-    const raw    = await generateText(prompt, { temperature: 0.3, numPredict: 800 });
+    const raw = await generateText(prompt, { temperature: 0.3, numPredict: 800 });
     const parsed = extractJSON(raw);
     if (!parsed || typeof parsed.score !== 'number')
       throw new Error('Invalid evaluation JSON from Ollama');
 
-    const score  = Math.max(0, Math.min(100, Math.round(parsed.score)));
+    const score = Math.max(0, Math.min(100, Math.round(parsed.score)));
     const rating = score >= 75 ? 'strong' : score >= 45 ? 'partial' : 'weak';
 
     return {
       score, rating,
       scores: {
-        accuracy:      parsed.scores?.accuracy  ?? score,
-        depth:         parsed.scores?.depth     ?? score,
-        examples:      parsed.scores?.examples  ?? score,
-        clarity:       parsed.scores?.clarity   ?? score,
-        keyword:       parsed.scores?.accuracy  ?? score,
-        length:        parsed.scores?.depth     ?? score,
-        understanding: parsed.scores?.examples  ?? score,
+        accuracy: parsed.scores?.accuracy ?? score,
+        depth: parsed.scores?.depth ?? score,
+        examples: parsed.scores?.examples ?? score,
+        clarity: parsed.scores?.clarity ?? score,
+        keyword: parsed.scores?.accuracy ?? score,
+        length: parsed.scores?.depth ?? score,
+        understanding: parsed.scores?.examples ?? score,
       },
-      feedback:        parsed.feedback        || 'Evaluated by Ollama',
-      strengths:       parsed.strengths       || [],
-      improvements:    parsed.improvements    || [],
+      feedback: parsed.feedback || 'Evaluated by Ollama',
+      strengths: parsed.strengths || [],
+      improvements: parsed.improvements || [],
       missingConcepts: parsed.missingConcepts || [],
       source: 'ollama',
     };
@@ -598,7 +661,7 @@ Return ONLY valid JSON (no markdown, no explanation outside JSON):
 }`;
 
   try {
-    const raw    = await generateText(prompt, { temperature: 0.25, numPredict: 600 });
+    const raw = await generateText(prompt, { temperature: 0.25, numPredict: 600 });
     const parsed = extractJSON(raw);
     if (!parsed) throw new Error('Invalid weakness JSON');
     return parsed;
@@ -619,9 +682,9 @@ Return ONLY valid JSON (no markdown, no explanation outside JSON):
  * Edge types:  hierarchy | prerequisite
  */
 const analyzeDependencies = async (topics, docSnippet = '', subject = '') => {
-  const topicNames  = topics.map(t => (typeof t === 'string' ? t : t.name)).filter(Boolean);
+  const topicNames = topics.map(t => (typeof t === 'string' ? t : t.name)).filter(Boolean);
   const subjectName = subject || topicNames[0] || 'Course';
-  const singleMode  = topicNames.length === 1 && topicNames[0] === subjectName;
+  const singleMode = topicNames.length === 1 && topicNames[0] === subjectName;
 
   // ── IMPORTANT: Ollama must NOT return x/y coordinates.
   // React Flow + Dagre compute layout automatically from the graph topology.
@@ -697,14 +760,14 @@ Rules:
   const prompt = singleMode ? singleTopicPrompt : fullCoursePrompt;
 
   try {
-    const raw    = await generateText(prompt, { temperature: 0.25, numPredict: 3500 });
+    const raw = await generateText(prompt, { temperature: 0.25, numPredict: 3500 });
     const parsed = extractJSON(raw);
     if (!parsed) throw new Error('Invalid dependency JSON');
     if (!Array.isArray(parsed.nodes) || parsed.nodes.length < 2)
       throw new Error('nodes array missing or too short');
     // Strip any coordinates Ollama may have hallucinated
     parsed.nodes = parsed.nodes.map(({ x, y, position, ...rest }) => rest);
-    console.log(`✅ Dependency graph: ${parsed.nodes.length} nodes, ${(parsed.edges||[]).length} edges`);
+    console.log(`✅ Dependency graph: ${parsed.nodes.length} nodes, ${(parsed.edges || []).length} edges`);
     return parsed;
   } catch (err) {
     console.error('analyzeDependencies error:', err.message);
@@ -719,10 +782,10 @@ const generateLearningPath = async (weakTopics, allTopics, dependencyRelationshi
   if (!weakTopics?.length) return [];
 
   const topicList = allTopics.join(', ');
-  const depsText  = dependencyRelationships.length
+  const depsText = dependencyRelationships.length
     ? dependencyRelationships
-        .map(r => `"${r.source}" before "${r.target}" (${r.type || 'prerequisite'})`)
-        .join('\n')
+      .map(r => `"${r.source}" before "${r.target}" (${r.type || 'prerequisite'})`)
+      .join('\n')
     : 'No dependency data.';
 
   const prompt = `You are an expert learning advisor.
@@ -751,7 +814,7 @@ Respond ONLY with valid JSON:
 }`;
 
   try {
-    const raw    = await generateText(prompt, { temperature: 0.3, numPredict: 1500 });
+    const raw = await generateText(prompt, { temperature: 0.3, numPredict: 1500 });
     const parsed = extractJSON(raw);
     if (!parsed?.paths) throw new Error('No paths in response');
     console.log(`✅ Learning paths generated for: ${weakTopics.join(', ')}`);
@@ -789,9 +852,9 @@ const generateAdvancedQuestions = async (topics, context = '') => {
    Returns: { what, explanation, whyWeak, gaps: string[], studySteps: string[] }
 ─────────────────────────────────────────────────────────────────────────── */
 const explainWeakNode = async (topicName, parentTopic, status, score, siblingContext = []) => {
-  const scoreStr  = score != null ? `${score}%` : 'not yet quizzed';
+  const scoreStr = score != null ? `${score}%` : 'not yet quizzed';
   const statusStr = status === 'weak' ? 'weak (needs significant revision)' : 'partially understood';
-  const siblings  = siblingContext.length
+  const siblings = siblingContext.length
     ? siblingContext.map(s => `"${s.name}" (${s.status}${s.score != null ? ', ' + s.score + '%' : ''})`).join(', ')
     : 'none listed';
 
@@ -823,17 +886,17 @@ Respond ONLY with this JSON (no extra text):
     if (!m) throw new Error('No JSON in response');
     const parsed = JSON.parse(m[0]);
     return {
-      what:        parsed.what        || '',
+      what: parsed.what || '',
       explanation: parsed.explanation || '',
-      whyWeak:     parsed.whyWeak     || '',
-      gaps:        Array.isArray(parsed.gaps)       ? parsed.gaps.slice(0, 3)       : [],
-      studySteps:  Array.isArray(parsed.studySteps) ? parsed.studySteps.slice(0, 3) : [],
+      whyWeak: parsed.whyWeak || '',
+      gaps: Array.isArray(parsed.gaps) ? parsed.gaps.slice(0, 3) : [],
+      studySteps: Array.isArray(parsed.studySteps) ? parsed.studySteps.slice(0, 3) : [],
     };
   } catch (e) {
     return {
-      what:        `"${topicName}" is a subtopic of "${parentTopic}" that requires focused study.`,
+      what: `"${topicName}" is a subtopic of "${parentTopic}" that requires focused study.`,
       explanation: `${topicName} refers to the methods and processes involved in this area of ${parentTopic}. Understanding this topic requires knowing the key concepts, tools, and procedures that are applied in practice. Review your course material for detailed explanations and worked examples.`,
-      whyWeak:     status === 'weak'
+      whyWeak: status === 'weak'
         ? `Your quiz performance reveals significant gaps in understanding "${topicName}". The foundational concepts of this topic are not yet solid enough to support higher-level questions.`
         : `You have a partial understanding of "${topicName}". Some key concepts are clear but gaps remain that are affecting your overall mastery of "${parentTopic}".`,
       gaps: [
@@ -850,10 +913,445 @@ Respond ONLY with this JSON (no extra text):
   }
 };
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEW PIPELINE — Phase A: Extract atomic concepts from chapter text
+═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * extractConcepts(text)
+ *
+ * Replaces the old heading-based extraction for new sessions.
+ * Returns { chapterTitle, subject, concepts[] } where every concept is
+ * an atomic learning unit ("Tilling", "Seed Drill") — NOT a section heading.
+ *
+ * Capped at 30 concepts to keep Ollama prerequisite pass tractable.
+ */
+const extractConcepts = async (text) => {
+  // Pre-extract heading outline first (free, fast), then fall back to raw
+  // text for the first 6 000 chars so concept names inside paragraphs aren't lost.
+  const outline = extractHeadingOutline(text);
+  const rawSnippet = text.replace(/\s+/g, ' ').trim().slice(0, 6000);
+  // Combine: headings give structure, snippet gives body concept names
+  const doc = (outline + '\n\n--- DOCUMENT EXCERPT ---\n' + rawSnippet).slice(0, 10000);
+
+  const prompt = `You are an expert educational content analyst.
+
+Your task: Extract the atomic LEARNING CONCEPTS from this chapter text.
+
+STRICT RULES:
+1. Extract ONLY real learning concepts — things a student must genuinely understand.
+   Examples of GOOD concepts: "Photosynthesis", "Tilling", "Seed Drill", "Drip Irrigation", "Manure"
+   Examples of BAD extractions: "Introduction", "Summary", "Activity 1.1", "Let's Do", "Questions"
+
+2. Do NOT extract:
+   - Chapter titles or section numbers (e.g. "1.3 Preparation of Soil")
+   - Activity names, exercise headings, examples
+   - Generic words: "overview", "review", "practice"
+
+3. Each concept label must be:
+   - 1–4 words only
+   - Title Case ("Seed Drill" not "seed drill")
+   - Specific enough to be quizzed ("Drip Irrigation" not just "Irrigation Methods")
+
+4. Return 10–30 concepts only. Quality over quantity.
+
+5. For each concept:
+   - id: snake_case of the name ("seed_drill")
+   - name: Title Case display name ("Seed Drill")
+   - type: one of "Concept" | "Process" | "Tool" | "Method" | "Principle"
+   - difficulty: 1–5 (1 = basic recall, 5 = expert application)
+   - importance: 1–5 (how central is this to the chapter?)
+
+Return ONLY valid JSON, no markdown, no explanation:
+{
+  "chapterTitle": "...",
+  "subject": "...",
+  "concepts": [
+    { "id": "soil", "name": "Soil", "type": "Concept", "difficulty": 1, "importance": 5 },
+    { "id": "tilling", "name": "Tilling", "type": "Process", "difficulty": 2, "importance": 4 }
+  ]
+}
+
+CHAPTER TEXT:
+${doc}
+
+JSON:`.trim();
+
+  try {
+    const raw = await generateText(prompt, { temperature: 0.15, numPredict: 3000 });
+    const cleaned = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+    const m = cleaned.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('No JSON object found in extractConcepts output');
+    const parsed = JSON.parse(m[0]);
+
+    const concepts = (parsed.concepts || [])
+      .filter(c => c?.id && c?.name)
+      .slice(0, 30) // hard cap
+      .map(c => ({
+        id: String(c.id).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
+        name: String(c.name).trim(),
+        type: ['Concept', 'Process', 'Tool', 'Method', 'Principle'].includes(c.type) ? c.type : 'Concept',
+        difficulty: Math.min(5, Math.max(1, Number(c.difficulty) || 2)),
+        importance: Math.min(5, Math.max(1, Number(c.importance) || 3)),
+      }));
+
+    console.log(`✅ extractConcepts: ${concepts.length} concepts from "${parsed.chapterTitle || 'unknown'}"`);
+    return {
+      chapterTitle: parsed.chapterTitle || '',
+      subject: parsed.subject || '',
+      concepts,
+    };
+  } catch (err) {
+    console.error('extractConcepts error:', err.message);
+    return { chapterTitle: '', subject: '', concepts: [] };
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEW PIPELINE — Phase B: Generate prerequisite edges between concepts
+═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * generatePrerequisiteEdges(concepts)
+ *
+ * Given the concept list from extractConcepts(), asks Ollama to determine
+ * real educational prerequisites.
+ * A → B means: student must understand A before B can be fully understood.
+ *
+ * Stores confidence (0.7–1.0) per edge so noisy edges can be filtered later.
+ *
+ * @param {Array<{id, name}>} concepts
+ * @returns {{ edges: Array<{source, target, confidence}> }}
+ */
+const generatePrerequisiteEdges = async (concepts) => {
+  if (!concepts || concepts.length < 2) return { edges: [] };
+
+  const conceptList = concepts.map(c => `- ${c.name} (id: ${c.id})`).join('\n');
+
+  const prompt = `You are an expert educational curriculum designer.
+
+Given these learning CONCEPTS from a chapter, determine which concepts are TRUE PREREQUISITES for others.
+
+DEFINITION of a PREREQUISITE:
+  A → B  means: a student CANNOT fully understand B without first understanding A.
+  This must be a REAL conceptual dependency, not just sequential order in the textbook.
+
+EXAMPLES OF REAL PREREQUISITES:
+  ✅ Soil → Tilling (you must know what soil IS before understanding how to till it)
+  ✅ Seed Selection → Seed Drill (you must choose seeds before using a seed drill)
+  ✅ Sowing → Irrigation (you sow first, then water)
+
+EXAMPLES OF FALSE PREREQUISITES (do NOT add these):
+  ❌ Harvesting → Threshing just because they appear in the same chapter sequentially
+  ❌ Manure → Irrigation because they're both farm inputs
+  ❌ Any edge where the connection is only "they're related" not "A is needed to understand B"
+
+RULES:
+1. Only add edges for REAL, DIRECT conceptual dependencies.
+2. Maximum 2 prerequisites per concept (don't over-connect).
+3. No cycles (A → B → A is invalid).
+4. Confidence 0.70–1.00 (how certain you are this is a true prerequisite).
+5. Only use concept IDs from the list below.
+6. If there are no real prerequisites, return empty edges array.
+
+CONCEPTS:
+${conceptList}
+
+Return ONLY valid JSON:
+{
+  "edges": [
+    { "source": "soil", "target": "tilling", "confidence": 0.95 },
+    { "source": "seed_selection", "target": "seed_drill", "confidence": 0.88 }
+  ]
+}
+
+JSON:`.trim();
+
+  try {
+    const raw = await generateText(prompt, { temperature: 0.15, numPredict: 2000 });
+    const cleaned = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+    const m = cleaned.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('No JSON in generatePrerequisiteEdges output');
+    const parsed = JSON.parse(m[0]);
+
+    const validIds = new Set(concepts.map(c => c.id));
+
+    // Validate: both source and target must exist in the concept list
+    const edges = (parsed.edges || [])
+      .filter(e => e?.source && e?.target && e.source !== e.target)
+      .filter(e => validIds.has(e.source) && validIds.has(e.target))
+      .map(e => ({
+        source: e.source,
+        target: e.target,
+        confidence: Math.min(1, Math.max(0.5, Number(e.confidence) || 0.8)),
+      }));
+
+    // Cycle detection: remove any edge that would create a cycle
+    const safEdges = _removeCycles(edges);
+
+    console.log(`✅ generatePrerequisiteEdges: ${safEdges.length} edges (${edges.length - safEdges.length} cycles removed)`);
+    return { edges: safEdges };
+  } catch (err) {
+    console.error('generatePrerequisiteEdges error:', err.message);
+    return { edges: [] };
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEW PIPELINE — Mind Map: Hierarchical Chapter Structure Extraction
+   Specifically tuned for NCERT-style chapters. Targets ONLY chapter headings,
+   subheadings, and categorized lists — ignores paragraphs, activities,
+   exercises, examples, dialogues, and stories.
+═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * extractMindMapStructure(text)
+ *
+ * Produces a clean 4-level hierarchy for mind map / concept graph rendering.
+ * Returns nodes[] + edges[] in React Flow-compatible flat format.
+ *
+ * Level 0 = Chapter root
+ * Level 1 = Major section headings
+ * Level 2 = Subsection headings / categorized lists
+ * Level 3 = Specific items (types, methods, crops, tools...)
+ *
+ * Filters out: explanations, definitions, examples, activities, exercises,
+ *              questions, dialogues, stories, notes, images, tables.
+ *
+ * @param {string} text — raw chapter text
+ * @returns {{
+ *   nodes: Array<{id, label, level}>,
+ *   edges: Array<{source, target}>,
+ *   chapterTitle: string,
+ *   subject: string
+ * }}
+ */
+const extractMindMapStructure = async (text) => {
+  // Pre-extract a heading outline from the FULL document (zero LLM cost).
+  // This compresses 20–30 KB of raw text into ~1–3 KB of structured headings
+  // so Ollama processes far fewer tokens while seeing 100% of the structure.
+  const doc = extractHeadingOutline(text);
+
+  // ── SYSTEM-LEVEL context baked into the user prompt ──────────────────────
+  const SYSTEM_CONTEXT = `You are an expert educational content analyzer.
+Your task is to convert a textbook chapter into a hierarchical concept map structure.
+
+CRITICAL — Extract ONLY:
+  - Main Chapter Topic (Level 0, root)
+  - Major Section Headings (Level 1)
+  - Subsection Headings (Level 2)
+  - Categorized List Items — methods, tools, types, crops, etc. (Level 3)
+
+CRITICAL — DO NOT extract:
+  - Explanations or definitions
+  - Examples or worked solutions
+  - Activities, exercises, or questions
+  - Dialogues, stories, or narratives
+  - Notes, captions, images, or tables
+  - Introductory or transitional text
+
+IMPORTANT for NCERT chapters:
+  NCERT chapters typically contain Stories, Activities, Dialogues, and Questions.
+  These are NOT concepts. Extract concepts ONLY from:
+    - Chapter Title
+    - Section Headings
+    - Subsection Headings
+    - Categorized Lists
+    - Keywords / Key Terms section
+
+Additional rules:
+  - Merge duplicate concepts — each concept appears ONCE.
+  - Maximum 4 levels deep (0 = root, 1, 2, 3).
+  - Maximum 8 children per node.
+  - Keep labels short: max 4 words, Title Case.
+  - Use chapter headings FIRST, subheadings SECOND, categorized lists THIRD.
+  - Every node needs a unique id (e.g. "1", "1_1", "1_1_1").
+  - Edges connect parent → child.
+  - Return ONLY valid JSON — no markdown, no explanation.`;
+
+  const prompt = `${SYSTEM_CONTEXT}
+
+Analyze the following chapter text.
+Create a hierarchical topic tree.
+
+Ignore:
+- paragraphs
+- explanations
+- activities
+- examples
+- exercises
+- dialogues
+- stories
+
+Extract only:
+- chapter title
+- headings
+- subheadings
+- important categorized lists
+
+Return JSON in this format:
+{
+  "chapterTitle": "Crop Production and Management",
+  "subject": "Science",
+  "nodes": [
+    { "id": "1", "label": "Crop Production and Management", "level": 0 },
+    { "id": "1_1", "label": "Agricultural Practices", "level": 1 },
+    { "id": "1_1_1", "label": "Soil Preparation", "level": 2 },
+    { "id": "1_1_1_1", "label": "Tilling", "level": 3 }
+  ],
+  "edges": [
+    { "source": "1", "target": "1_1" },
+    { "source": "1_1", "target": "1_1_1" },
+    { "source": "1_1_1", "target": "1_1_1_1" }
+  ]
+}
+
+CHAPTER TEXT:
+---
+${doc}
+---
+
+Return ONLY the JSON object. No other text.`;
+
+  // ── Noise-label filter (same patterns used in extractTopicsAdvanced) ───────
+  const NOISE_PATTERNS = [
+    /^let'?s\s+(do|think|discuss|recall|explore)/i,
+    /^do\s+this/i,
+    /^activity/i,
+    /^exercise/i,
+    /^questions?$/i,
+    /^textual\s+question/i,
+    /^additional\s+question/i,
+    /^summary$/i,
+    /^glossary$/i,
+    /^further\s+reading/i,
+    /^in\s+text\s+question/i,
+    /^box\s+item/i,
+    /^note\s*:/i,
+    /^figure/i,
+    /^table/i,
+    /^example/i,
+    /^illustration/i,
+    /^story/i,
+    /^dialogue/i,
+    /^introduction$/i,
+    /^conclusion$/i,
+    /^references?$/i,
+    /^bibliography/i,
+  ];
+  const isNoise = (label) => NOISE_PATTERNS.some(rx => rx.test((label || '').trim()));
+
+  // Enforce max 4 words per label, strip leading numbering ("1.2 Soil") → "Soil"
+  const cleanMindMapLabel = (label) =>
+    (label || '')
+      .replace(/^[\d]+([.][\d]*)?\.?\s*/, '') // strip "1." "1.2" "1.2." etc.
+      .replace(/^[•\-*]\s*/, '')               // strip bullets
+      .replace(/[,;:]+$/, '')                  // strip trailing punctuation
+      .split(/\s+/).slice(0, 5).join(' ')       // max 5 words
+      .trim();
+
+  try {
+    // 4000 tokens — enough for a complete mind map with 60+ nodes.
+    const raw = await generateText(prompt, { temperature: 0.1, numPredict: 4000 });
+    const parsed = extractJSON(raw);
+
+    if (!parsed || !Array.isArray(parsed.nodes) || parsed.nodes.length === 0) {
+      throw new Error('extractMindMapStructure: no nodes in response');
+    }
+
+    // ── Post-process nodes ─────────────────────────────────────────────────
+    // 1. Clean labels
+    let nodes = parsed.nodes
+      .filter(n => n?.id && n?.label)
+      .map(n => ({
+        id: String(n.id),
+        label: cleanMindMapLabel(n.label),
+        level: typeof n.level === 'number' ? Math.min(3, Math.max(0, n.level)) : 1,
+      }))
+      .filter(n => n.label.length > 0 && !isNoise(n.label));
+
+    // 2. Deduplicate by normalized label
+    const seenLabels = new Set();
+    nodes = nodes.filter(n => {
+      const key = n.label.toLowerCase().replace(/\s+/g, ' ');
+      if (seenLabels.has(key)) return false;
+      seenLabels.add(key);
+      return true;
+    });
+
+    // 3. Build valid ID set for edge filtering
+    const validIds = new Set(nodes.map(n => n.id));
+
+    // 4. Filter edges to only valid node references
+    const edges = (parsed.edges || [])
+      .filter(e => e?.source && e?.target && e.source !== e.target)
+      .filter(e => validIds.has(e.source) && validIds.has(e.target))
+      .map(e => ({ source: String(e.source), target: String(e.target) }));
+
+    // 5. Enforce max 8 children per parent
+    const childCount = {};
+    const filteredEdges = edges.filter(e => {
+      childCount[e.source] = (childCount[e.source] || 0) + 1;
+      return childCount[e.source] <= 8;
+    });
+
+    const chapterTitle = cleanMindMapLabel(parsed.chapterTitle || nodes.find(n => n.level === 0)?.label || '');
+    const subject = (parsed.subject || '').trim();
+
+    console.log(
+      `✅ extractMindMapStructure: ${nodes.length} nodes, ${filteredEdges.length} edges` +
+      ` — "${chapterTitle}"`
+    );
+
+    return {
+      nodes,
+      edges: filteredEdges,
+      chapterTitle,
+      subject,
+    };
+  } catch (err) {
+    console.error('extractMindMapStructure error:', err.message);
+    return { nodes: [], edges: [], chapterTitle: '', subject: '' };
+  }
+};
+
+/** Remove edges that create cycles using DFS */
+const _removeCycles = (edges) => {
+  const adj = {}; // source → [targets]
+  const safe = [];
+  for (const e of edges) {
+    // Check if adding this edge would create a cycle
+    if (_hasCycle(adj, e.source, e.target)) continue;
+    // Safe — add it
+    if (!adj[e.source]) adj[e.source] = [];
+    adj[e.source].push(e.target);
+    safe.push(e);
+  }
+  return safe;
+};
+
+const _hasCycle = (adj, from, to) => {
+  // DFS from `to` — if we can reach `from`, adding from→to would create a cycle
+  const visited = new Set();
+  const stack = [to];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (cur === from) return true;
+    if (visited.has(cur)) continue;
+    visited.add(cur);
+    for (const next of (adj[cur] || [])) stack.push(next);
+  }
+  return false;
+};
+
 module.exports = {
   testOllamaConnection,
   generateText,
   extractTopicsAdvanced,
+  extractMindMapStructure,   // ← new: NCERT/chapter heading-based mind map
+  extractConcepts,
+  generatePrerequisiteEdges,
+  flatNodesToTopicsData,
   deduplicateTopics,
   normalizeName,
   generateDocumentQuestions,

@@ -80,6 +80,141 @@ function doLayout(roots) {
   return pos;
 }
 
+/* ═══ DAG Layout (concept graph mode) ══════════════════════════════
+   Lays out nodes in topological layers:
+     Layer 0 = concepts with no prerequisites (roots)
+     Layer 1 = concepts whose prerequisites are all in layer 0
+     etc.
+   Within each layer, nodes are centred horizontally.
+══════════════════════════════════════════════════════════════════ */
+function buildDagLayout(nodes, edges) {
+  if (!nodes.length) return [];
+
+  // Build adjacency from concept-graph edges
+  // edge.source → edge.target means "source is prerequisite of target"
+  const byName   = {};
+  nodes.forEach(n => { byName[n.name] = n; });
+
+  // Build maps: name → [prerequisite names]
+  const prereqs  = {}; // target → [sources]
+  const deps     = {}; // source → [targets]
+  nodes.forEach(n => { prereqs[n.name] = []; deps[n.name] = []; });
+
+  // Map from conceptId to name
+  const idToName = {};
+  nodes.forEach(n => { if (n.conceptId) idToName[n.conceptId] = n.name; });
+
+  edges.forEach(e => {
+    const sName = idToName[e.source] || e.source;
+    const tName = idToName[e.target] || e.target;
+    if (byName[sName] && byName[tName]) {
+      if (!prereqs[tName]) prereqs[tName] = [];
+      if (!deps[sName])    deps[sName]    = [];
+      prereqs[tName].push(sName);
+      deps[sName].push(tName);
+    }
+  });
+
+  // Kahn's topological layering
+  const layer  = {};
+  const inDeg  = {};
+  nodes.forEach(n => { inDeg[n.name] = (prereqs[n.name] || []).length; });
+  const queue  = nodes.filter(n => inDeg[n.name] === 0).map(n => n.name);
+  queue.forEach(name => { layer[name] = 0; });
+
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const next of (deps[cur] || [])) {
+      inDeg[next]--;
+      layer[next] = Math.max(layer[next] ?? 0, (layer[cur] ?? 0) + 1);
+      if (inDeg[next] === 0) queue.push(next);
+    }
+  }
+  // Any remaining (cycle remnants) go at the end
+  nodes.forEach(n => { if (layer[n.name] === undefined) layer[n.name] = 0; });
+
+  // Group by layer
+  const maxLayer  = Math.max(...Object.values(layer));
+  const byLayer   = {};
+  nodes.forEach(n => {
+    const l = layer[n.name] ?? 0;
+    if (!byLayer[l]) byLayer[l] = [];
+    byLayer[l].push(n);
+  });
+
+  const LAYER_H    = NH + VGAP;
+  const NODE_W     = NW;
+  const NODE_GAP   = HGAP;
+  const positions  = [];
+
+  for (let l = 0; l <= maxLayer; l++) {
+    const layerNodes = byLayer[l] || [];
+    const totalW = layerNodes.length * NODE_W + (layerNodes.length - 1) * NODE_GAP;
+    let xStart   = -totalW / 2;
+    layerNodes.forEach(n => {
+      positions.push({ node: { ...n, depth: l === 0 ? 0 : 1 }, x: xStart, y: l * LAYER_H, w: NODE_W, h: NH });
+      xStart += NODE_W + NODE_GAP;
+    });
+  }
+
+  // Shift all to positive coords
+  const minX = Math.min(...positions.map(p => p.x));
+  const minY = Math.min(...positions.map(p => p.y));
+  positions.forEach(p => { p.x -= minX - PAD; p.y -= minY - PAD; });
+
+  return positions;
+}
+
+/* Build posMap by name for DAG edge renderer */
+function buildPosMapByName(positions) {
+  const m = {};
+  positions.forEach(({ node, x, y, w, h }) => { m[node.name] = { x, y, w, h }; });
+  return m;
+}
+
+/* ═══ DAG SVG Edges (concept mode) ══════════════════════════════════
+   Renders prerequisite edges using stored { source, target, confidence }.
+   source id is mapped to concept name, then position looked up.
+══════════════════════════════════════════════════════════════════ */
+function DagSvgEdges({ edges, positions, nodes }) {
+  const idToName = {};
+  nodes.forEach(n => { if (n.conceptId) idToName[n.conceptId] = n.name; });
+
+  const posMap = {};
+  positions.forEach(({ node, x, y, w, h }) => { posMap[node.name] = { x, y, w, h }; });
+
+  return edges
+    .filter(e => (e.confidence ?? 1) >= 0.7) // only confident edges
+    .map((e, i) => {
+      const sName = idToName[e.source] || e.source;
+      const tName = idToName[e.target] || e.target;
+      const sp = posMap[sName];
+      const tp = posMap[tName];
+      if (!sp || !tp) return null;
+
+      const x1 = sp.x + sp.w / 2;
+      const y1 = sp.y + sp.h;
+      const x2 = tp.x + tp.w / 2;
+      const y2 = tp.y;
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      const alpha = Math.round((e.confidence ?? 0.8) * 220);
+      const stroke = `rgba(99,102,241,${(e.confidence ?? 0.8).toFixed(2)})`;
+
+      return (
+        <g key={i}>
+          <path
+            d={`M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`}
+            fill="none" stroke={stroke} strokeWidth={1.6}
+            markerEnd="url(#arr-not_started)"
+            strokeDasharray={e.confidence < 0.8 ? '5 3' : 'none'}
+          />
+        </g>
+      );
+    })
+    .filter(Boolean);
+}
+
 /* ═══ SVG Node ══════════════════════════════════════════════════════ */
 function SvgNode({ x, y, w, h, node, selectedName, onClick }) {
   const cfg = C[node.status] || C.not_started;
@@ -114,8 +249,13 @@ function SvgNode({ x, y, w, h, node, selectedName, onClick }) {
   return (
     <g onClick={() => onClick(node)} style={{ cursor:'pointer' }}>
       {sel && <rect x={x-4} y={y-4} width={w+8} height={h+8} rx="16" fill="none" stroke={cfg.border} strokeWidth="3" opacity="0.4"/>}
+      {/* Root cause gold ring */}
+      {node.isRootCause && !sel && (
+        <rect x={x-4} y={y-4} width={w+8} height={h+8} rx="16" fill="none"
+          stroke="#f59e0b" strokeWidth="2.5" strokeDasharray="5 3" opacity="0.9"/>
+      )}
       <rect x={x+2} y={y+4} width={w} height={h} rx="12" fill="rgba(0,0,0,0.055)"/>
-      <rect x={x} y={y} width={w} height={h} rx="12" fill="#fff" stroke={cfg.border} strokeWidth={sel?2.2:1.7}/>
+      <rect x={x} y={y} width={w} height={h} rx="12" fill="#fff" stroke={node.isRootCause ? '#f59e0b' : cfg.border} strokeWidth={sel?2.2:1.7}/>
       <rect x={ibx} y={iby} width={32} height={32} rx="8" fill={cfg.iconBg}/>
       <g transform={`translate(${ibx+6},${iby+6})`}>
         <svg width="20" height="20" viewBox="0 0 20 20">{iconEl(cfg.iconFg)}</svg>
@@ -442,20 +582,33 @@ function DetailPanel({ node, allNodes, weaknessData, onClose, onPractice, onQuiz
 const LEGEND=[{s:'strong',icon:'✓',label:'Strong'},{s:'partial',icon:'!',label:'Partial'},{s:'weak',icon:'✗',label:'Weak'},{s:'not_started',icon:'○',label:'Not Started'},{s:'current',icon:'◉',label:'Current Topic'}];
 
 /* ═══ Main exported component ══════════════════════════════════════ */
-export default function DependencyGraph({ nodes=[], graphData=null, topicName='', weaknessData=null, onNavigatePractice, onQuizTopic, fullScreen=false }) {
+// New prop: `edges` — if provided (concept mode), use DAG layout.
+//           Otherwise fall back to the legacy tree layout.
+export default function DependencyGraph({ nodes=[], edges=null, graphData=null, topicName='', weaknessData=null, onNavigatePractice, onQuizTopic, fullScreen=false }) {
+  const isConceptMode = Array.isArray(edges) && edges.length > 0;
   const [zoom, setZoom] = useState(1);
   const [selectedNode, setSelectedNode] = useState(null);
   const autoRef = useRef(false);
 
   const { positions, posMap, rootNode } = useMemo(() => {
     if (!nodes.length) return { positions:[], posMap:{}, rootNode:null };
-    const roots = buildTree(nodes);
-    if (!roots.length) return { positions:[], posMap:{}, rootNode:null };
-    const pos = doLayout(roots);
-    const pm = {};
-    pos.forEach(p => { pm[p.node.name]=p; });
-    return { positions:pos, posMap:pm, rootNode:roots[0] };
-  }, [nodes]);
+
+    if (isConceptMode) {
+      // DAG layout: topological layers from prerequisite edges
+      const pos = buildDagLayout(nodes, edges);
+      const pm = buildPosMapByName(pos);
+      return { positions: pos, posMap: pm, rootNode: pos[0]?.node || null };
+    } else {
+      // Legacy tree layout
+      const roots = buildTree(nodes);
+      if (!roots.length) return { positions:[], posMap:{}, rootNode:null };
+      const pos = doLayout(roots);
+      const pm = {};
+      pos.forEach(p => { pm[p.node.name]=p; });
+      return { positions:pos, posMap:pm, rootNode:roots[0] };
+    }
+  }, [nodes, edges, isConceptMode]);
+
 
   useEffect(() => {
     if (!autoRef.current && rootNode) {
@@ -628,7 +781,11 @@ export default function DependencyGraph({ nodes=[], graphData=null, topicName=''
               ))}
             </defs>
             <g transform={`translate(${dx},${dy}) scale(${zoom})`}>
-              <SvgEdges positions={positions} posMap={posMap}/>
+              {/* Edges: use DagSvgEdges in concept mode, legacy SvgEdges otherwise */}
+              {isConceptMode
+                ? <DagSvgEdges edges={edges} positions={positions} nodes={nodes}/>
+                : <SvgEdges positions={positions} posMap={posMap}/>
+              }
               {positions.map(({node,x,y,w,h})=>(
                 <SvgNode key={node.name} x={x} y={y} w={w} h={h}
                   node={{...node, score:node.score??node.prerequisiteScore}}

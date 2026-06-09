@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import FileUpload from '../components/FileUpload';
 import { extractTextFromFile } from '../services/textExtractionService';
@@ -229,6 +229,9 @@ const ConceptGraphPage = () => {
   // ── Bloom's modal (mind map node click) ──
   const [bloomTopic, setBloomTopic] = useState(null); // { name, parent }
 
+  // ── mind map revision counter — bumped on every eval update to force canvas redraw ──
+  const mapRevRef = useRef(0);
+  const [mapRevision, setMapRevision] = useState(0);
 
 
   // ── hooks ──
@@ -304,6 +307,17 @@ const ConceptGraphPage = () => {
 
         const topicsResult = await topicExtraction.extract(text);
         if (topicsResult) {
+          // Sanitize subject: strip course codes and fix 'Unknown' or blank subjects
+          const _stripCode = (s) => (s || '').replace(/^[A-Z]{2,6}[-\s]?\d{3,6}\s*/i, '').replace(/[,;:]+$/, '').trim();
+          const cleanedSubject = _stripCode(topicsResult.subject);
+          if (!cleanedSubject || cleanedSubject === 'Unknown') {
+            const firstTopic = topicsResult.topics?.[0];
+            topicsResult.subject = typeof firstTopic === 'string'
+              ? firstTopic
+              : (firstTopic?.name || 'Concept Map');
+          } else {
+            topicsResult.subject = cleanedSubject;
+          }
           setTopicsData(topicsResult);
           completeStep('topics');
           setProcessing(null);
@@ -369,6 +383,37 @@ const ConceptGraphPage = () => {
     try {
       const parsed = JSON.parse(raw);
       if (!parsed?.topics?.length) return;
+
+      // ── Detect keyword-fallback / bad cached data ───────────────
+      // When Ollama fails, the rule-based fallback produces single keywords as
+      // topics (e.g. "soil", "crop", "water") with NO subtopics.
+      // NOTE: We check topic STRUCTURE only — NOT subject name, because an earlier
+      // sanitization pass may have already changed 'Unknown' to a keyword.
+      const allTopicsAreLeafKeywords = parsed.topics.length > 0 && parsed.topics.every(t => {
+        const name = typeof t === 'string' ? t : (t?.name || '');
+        const subs = typeof t === 'object' ? (t.subtopics || []) : [];
+        // keyword-fallback topics: short (≤2 words), all lowercase, no subtopics
+        return subs.length === 0 && name.trim().split(/\s+/).length <= 2 && name === name.toLowerCase();
+      });
+
+      if (allTopicsAreLeafKeywords) {
+        console.warn('[ConceptGraphPage] Discarding stale keyword-fallback cache — please re-upload.');
+        ['learningTopicsData', 'learningQuestionsData', 'learningEvaluationData', 'learningDependencyData']
+          .forEach(k => localStorage.removeItem(k));
+        return; // stay on upload screen
+      }
+
+      // Sanitize subject: strip course codes and fix 'Unknown' — handles already-cached data
+      const _sc = (s) => (s || '').replace(/^[A-Z]{2,6}[-\s]?\d{3,6}\s*/i, '').replace(/[,;:]+$/, '').trim();
+      const cleanedCachedSubject = _sc(parsed.subject);
+      if (!cleanedCachedSubject || cleanedCachedSubject === 'Unknown') {
+        const firstTopic = parsed.topics[0];
+        parsed.subject = typeof firstTopic === 'string'
+          ? firstTopic
+          : (firstTopic?.name || 'Concept Map');
+      } else {
+        parsed.subject = cleanedCachedSubject;
+      }
 
       // Restore topics
       setTopicsData(parsed);
@@ -489,6 +534,9 @@ const ConceptGraphPage = () => {
       if (activeSessionId) saveSessionEvaluation(activeSessionId, stamped);
       return merged;
     });
+    // Bump revision so QuizMindMap canvas redraws immediately with new node colors
+    mapRevRef.current += 1;
+    setMapRevision(mapRevRef.current);
     if (Object.keys(ev).length > 0) completeStep('practice');
   };
 
@@ -700,18 +748,60 @@ const ConceptGraphPage = () => {
     }
 
     // ── MIND MAP VIEW ────────────────────────────────────────────
+    // Detect if loaded data is stale keyword-fallback (all topics have no subtopics)
+    const hasFallbackData = topicsData?.topics?.length > 0 &&
+      topicsData.topics.every(t => {
+        const subs = typeof t === 'object' ? (t.subtopics || []) : [];
+        const name = typeof t === 'string' ? t : (t?.name || '');
+        return subs.length === 0 && name.trim().split(/\s+/).length <= 2 && name === name.toLowerCase();
+      });
+
     return (
       <>
         <SectionHeader
           title="Concept Mind Map"
           subtitle="Click any topic or subtopic node to start a quiz on it"
         />
+
+        {/* ── Stale data warning ── */}
+        {hasFallbackData && (
+          <div style={{
+            marginBottom: 16, padding: '14px 18px', borderRadius: 12,
+            background: 'rgba(239,68,68,0.06)', border: '1.5px solid rgba(239,68,68,0.25)',
+            display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontWeight: 700, fontSize: '0.9rem', color: '#b91c1c', marginBottom: 2 }}>
+                Incomplete extraction — AI could not process this document
+              </p>
+              <p style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                The mind map shows keyword fallback data. Re-upload your document to get the full hierarchical mind map.
+              </p>
+            </div>
+            <button
+              className="t-btn t-btn-primary t-btn-sm"
+              onClick={() => {
+                ['learningTopicsData','learningQuestionsData','learningEvaluationData','learningDependencyData']
+                  .forEach(k => localStorage.removeItem(k));
+                setTopicsData(null);
+                setEvaluationData({});
+                setWizardStep('upload');
+                setCompletedSteps(new Set());
+              }}
+            >
+              Re-upload Document
+            </button>
+          </div>
+        )}
+
         {topicsData && (
           <MindMapViewer
             key="mindmap"
             topics={topicsData.topics}
             subject={topicsData.subject || ''}
             evaluationData={evaluationData}
+            revision={mapRevision}
             onTopicClick={(name, parent) => {
               // Find parent topic name if the clicked node is a subtopic
               const parentTopicObj = topicsData.topics.find(t =>

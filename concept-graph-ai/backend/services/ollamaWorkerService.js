@@ -180,8 +180,36 @@ const generateLearningPath = async (weakTopics, allTopics, dependencies, extract
   return result;
 };
 
+const extractConcepts = async (text) => {
+  console.log('🔀 [Worker] Extracting concepts...');
+  const result = await runOllamaWorker('extractConcepts', { text });
+  console.log(`✅ [Worker] Concepts done: ${(result?.concepts || []).length} concepts`);
+  return result;
+};
+
+const generatePrerequisiteEdges = async (concepts) => {
+  console.log(`🔀 [Worker] Generating prerequisite edges for ${(concepts || []).length} concepts...`);
+  const result = await runOllamaWorker('generatePrerequisiteEdges', { concepts });
+  console.log(`✅ [Worker] Edges done: ${(result?.edges || []).length} edges`);
+  return result;
+};
+
+// ── NEW: heading-based mind map extraction (NCERT / chapter-style documents) ──
+const extractMindMapStructure = async (text) => {
+  console.log('🔀 [Worker] Extracting mind map structure...');
+  const result = await runOllamaWorker('extractMindMap', { text });
+  console.log(
+    `✅ [Worker] Mind map done: ${(result?.nodes || []).length} nodes, ` +
+    `${(result?.edges || []).length} edges — "${result?.chapterTitle || ''}"` 
+  );
+  return result;
+};
+
 module.exports = {
   extractTopicsAdvanced,
+  extractMindMapStructure,     // ← new: NCERT/chapter heading-based mind map
+  extractConcepts,
+  generatePrerequisiteEdges,
   analyzeDependencies,
   generateDocumentQuestions,
   evaluateAnswer,

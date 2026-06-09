@@ -128,7 +128,7 @@ export const loadSessionData = async (userId) => {
   if (merged.topicsData)    localStorage.setItem('learningTopicsData',    JSON.stringify(merged.topicsData));
   if (merged.questionsData) localStorage.setItem('learningQuestionsData', JSON.stringify(merged.questionsData));
   if (merged.evaluationData && Object.keys(merged.evaluationData).length)
-    localStorage.setItem('learningEvaluationData', JSON.stringify(merged.evaluationData));
+    setEvalStorage('learningEvaluationData', JSON.stringify(merged.evaluationData));
   if (merged.dependencyData)localStorage.setItem('learningDependencyData',JSON.stringify(merged.dependencyData));
 
   return merged;

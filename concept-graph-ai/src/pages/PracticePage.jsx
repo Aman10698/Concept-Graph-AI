@@ -64,7 +64,7 @@ export default function PracticePage() {
               setSessionTitle(cleaned || data.title)
             }
             if (data.topicsData)     localStorage.setItem('learningTopicsData',    JSON.stringify(data.topicsData))
-            if (data.evaluationData) localStorage.setItem('learningEvaluationData',JSON.stringify(data.evaluationData))
+            if (data.evaluationData) setEvalStorage('learningEvaluationData',JSON.stringify(data.evaluationData))
             // Clear any old stale question cache so nodes always trigger fresh generation
             localStorage.removeItem('learningQuestionsData')
             return
@@ -399,7 +399,7 @@ export default function PracticePage() {
           ) : (
             <div className="t-card" style={{ padding: '18px', background: 'linear-gradient(135deg,#f8faff 0%,#f0f4ff 100%)' }}>
               <QuizMindMap
-                key={mapRevision}
+                revision={mapRevision}
                 topics={topics}
                 evalData={evalData}
                 courseTitle={sessionTitle}

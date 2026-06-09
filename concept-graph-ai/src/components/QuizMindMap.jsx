@@ -5,8 +5,8 @@ const ROOT_H_MIN = 52
 const ROOT_H_2L  = 70
 const ROOT_FONT  = 'bold 14px Inter,sans-serif'
 const ROOT_PAD_X = 24
-const TOPIC_W = 165, TOPIC_H = 88
-const SUB_W   = 148, SUB_H   = 62
+const TOPIC_W = 165, TOPIC_H = 96
+const SUB_W   = 148, SUB_H   = 70
 const H_GAP1  = 68    // root → topics
 const H_GAP2  = 44    // topics → first subtopic
 const V_GAP   = 10    // between sibling subtopics
@@ -105,8 +105,9 @@ function buildColumns(rawTopics, evalData) {
     const subRatings  = deduped.map(d => evalData?.[d]?.rating)
     const allTested   = deduped.length > 0 && subRatings.every(r => r != null)
     const rating      = evalData?.[col.name]?.rating ?? (allTested ? aggregateRating(subRatings) : undefined)
+    // Keep ALL topics — even those without subtopics — so the mind map renders them as leaf nodes
     return { name: col.name, descendants: deduped, rating }
-  }).filter(col => col.descendants.length > 0)
+  })
 }
 
 /* ─── Build world-space layout ───────────────────────────── */
@@ -115,7 +116,7 @@ function buildLayout(topics, evalData, courseTitle) {
   const { w: ROOT_W, h: ROOT_H } = measureRootNode(courseTitle || '')
 
   const colW   = Math.max(SUB_W, TOPIC_W) + COL_GAP
-  const totalW = cols.length * colW - COL_GAP + PAD * 2
+  const totalW = cols.length > 0 ? cols.length * colW - COL_GAP + PAD * 2 : ROOT_W + PAD * 2
   const rootX  = totalW / 2 - ROOT_W / 2
   const rootY  = PAD
   const nodes  = []
@@ -146,8 +147,8 @@ function buildLayout(topics, evalData, courseTitle) {
     })
   })
 
-  const maxDesc = Math.max(...cols.map(c => c.descendants.length), 0)
-  const totalH  = topicY + TOPIC_H + H_GAP2 + maxDesc * (SUB_H + V_GAP) + PAD
+  const maxDesc = cols.length > 0 ? Math.max(...cols.map(c => c.descendants.length), 0) : 0
+  const totalH  = topicY + (cols.length > 0 ? TOPIC_H + H_GAP2 + maxDesc * (SUB_H + V_GAP) : 0) + PAD
   return { nodes, totalW, totalH }
 }
 
@@ -170,11 +171,21 @@ function wrapText(ctx, text, x, y, maxW, lineH, maxLines = 2) {
     const t = line ? line + ' ' + word : word
     if (ctx.measureText(t).width > maxW && line) {
       lines.push(line); line = word
-      if (lines.length >= maxLines) break
+      if (lines.length >= maxLines) { line = ''; break }
     } else { line = t }
   }
   if (line && lines.length < maxLines) lines.push(line)
-  lines.forEach((l, i) => ctx.fillText(l, x, y + i * lineH))
+
+  // Draw each line; if still too wide (e.g. long compound word), truncate with ellipsis
+  lines.forEach((l, i) => {
+    let drawn = l
+    if (ctx.measureText(drawn).width > maxW) {
+      while (drawn.length > 1 && ctx.measureText(drawn + '\u2026').width > maxW)
+        drawn = drawn.slice(0, -1)
+      drawn += '\u2026'
+    }
+    ctx.fillText(drawn, x, y + i * lineH)
+  })
   return y + lines.length * lineH
 }
 
@@ -244,10 +255,17 @@ function drawCard(ctx, node, isHov, courseTitle) {
     const fs   = kind === 'topic' ? 12 : 11
     const lh   = fs + 3
 
+    // Clip to card so no text ever renders outside the rounded rect boundary
+    ctx.save()
+    rrect(ctx, x, y, w, h, R)
+    ctx.clip()
+
     ctx.fillStyle = '#1e293b'
     ctx.font = `bold ${fs}px Inter,sans-serif`
     ctx.textAlign = 'left'; ctx.textBaseline = 'top'
     curY = wrapText(ctx, name, x + pad, curY, w - pad * 2, lh, 2) + 4
+
+    ctx.restore()
 
     // badge
     const label = ratingLabel(rating)
@@ -275,6 +293,7 @@ function drawCard(ctx, node, isHov, courseTitle) {
 export default function QuizMindMap({
   topics = [], evalData = {}, courseTitle = '',
   onSelectTopic, onSelectSubtopic, onCardClick,
+  revision = 0,   // increment from parent to trigger an immediate redraw
 }) {
   const wrapRef   = useRef(null)
   const canvasRef = useRef(null)
@@ -283,6 +302,12 @@ export default function QuizMindMap({
   const [hovered, setHovered] = useState(null)
   const [width,   setWidth]   = useState(0)
   const [vpVer,   setVpVer]   = useState(0)
+
+  // When the parent bumps `revision` (e.g. after a quiz), force an immediate redraw
+  // without remounting the whole canvas (avoids the 120 ms blank-canvas flash)
+  useEffect(() => {
+    if (revision > 0) setVpVer(v => v + 1)
+  }, [revision])
 
   useEffect(() => {
     const el = wrapRef.current; if (!el) return

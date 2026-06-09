@@ -3,16 +3,21 @@
  * One Session = one uploaded syllabus with its own topics, questions, and progress.
  */
 
+import { setEvalStorage } from '../utils/evalBus';
+
 const API_BASE = 'http://localhost:5000/api';
 
 /* ─── create a new session (called when syllabus is uploaded) ── */
-export const createSession = async (userId, { title, subject, extractedText, topicsData }) => {
+export const createSession = async (
+  userId,
+  { title, subject, extractedText, topicsData, conceptGraph = null, mindMap = null }
+) => {
   if (!userId) return null;
   try {
     const res  = await fetch(`${API_BASE}/sessions/${encodeURIComponent(userId)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, subject, extractedText, topicsData }),
+      body: JSON.stringify({ title, subject, extractedText, topicsData, conceptGraph, mindMap }),
     });
     const json = await res.json();
     if (json.success) {
@@ -28,13 +33,16 @@ export const createSession = async (userId, { title, subject, extractedText, top
 };
 
 /* ─── update AI-generated data after questions/deps are ready ── */
-export const updateSessionData = async (sessionId, { questionsData, dependencyData, topicDepGraphs } = {}) => {
+export const updateSessionData = async (
+  sessionId,
+  { questionsData, dependencyData, topicDepGraphs, conceptGraph, mindMap } = {}
+) => {
   if (!sessionId) return;
   try {
     await fetch(`${API_BASE}/sessions/${sessionId}/data`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questionsData, dependencyData, topicDepGraphs }),
+      body: JSON.stringify({ questionsData, dependencyData, topicDepGraphs, conceptGraph, mindMap }),
     });
   } catch (err) {
     console.warn('[Session] updateSessionData failed:', err.message);
@@ -98,12 +106,16 @@ export const activateSession = async (sessionId) => {
   if (data.topicsData)     localStorage.setItem('learningTopicsData',    JSON.stringify(data.topicsData));
   if (data.questionsData)  localStorage.setItem('learningQuestionsData', JSON.stringify(data.questionsData));
   if (data.dependencyData) localStorage.setItem('learningDependencyData',JSON.stringify(data.dependencyData));
-  if (data.evaluationData) localStorage.setItem('learningEvaluationData',JSON.stringify(data.evaluationData));
+  if (data.evaluationData) setEvalStorage('learningEvaluationData', JSON.stringify(data.evaluationData));
   // Restore per-session dep graphs so DepGraphPage can show them
   localStorage.setItem(`topicDepGraphs_${data.sessionId}`, JSON.stringify(data.topicDepGraphs || {}));
   // Keep a global copy for backwards compat (ConceptGraphPage reads this)
   if (Object.keys(data.topicDepGraphs || {}).length > 0) {
     localStorage.setItem('topicDepGraphs', JSON.stringify(data.topicDepGraphs));
+  }
+  // Persist mind map so the MindMapPage can render it without a network call
+  if (data.mindMap) {
+    localStorage.setItem(`mindMap_${data.sessionId}`, JSON.stringify(data.mindMap));
   }
 
   return data;

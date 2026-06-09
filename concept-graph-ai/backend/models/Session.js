@@ -27,6 +27,28 @@ const SessionSchema = new mongoose.Schema({
   // Shape: { "TopicName": { rating, score, nodes, improvements, testedAt } }
   topicDepGraphs: { type: mongoose.Schema.Types.Mixed, default: {} },
 
+  /* ──────────────────────────────────────────────────────────────────
+     NEW PIPELINE — True Knowledge Dependency Graph
+     Only populated for sessions uploaded after the concept graph upgrade.
+     Old sessions keep topicsData / evaluationData and use the legacy
+     dep-graph renderer — no migration needed.
+  ─────────────────────────────────────────────────────────────────── */
+
+  // Two-phase Ollama output stored at upload time (never recomputed on render).
+  // nodes: [{ id, name, type, difficulty, importance }]
+  // edges: [{ source, target, confidence }]  ← true prerequisites, not headings
+  conceptGraph: { type: mongoose.Schema.Types.Mixed, default: null },
+
+  // Heading-based mind map — NCERT / chapter-style documents.
+  // nodes: [{ id, label, level }]  level 0=root, 1=section, 2=subsection, 3=item
+  // edges: [{ source, target }]    parent → child hierarchy only
+  // mode:  'mindmap'
+  mindMap: { type: mongoose.Schema.Types.Mixed, default: null },
+
+  // Per-concept mastery derived from quiz results.
+  // Shape: { "concept_id": { correct, incorrect, mastery, status, lastPracticed } }
+  conceptMastery: { type: mongoose.Schema.Types.Mixed, default: {} },
+
   // Computed counts (for list view — avoids fetching full data)
   topicCount:     { type: Number, default: 0 },
   questionCount:  { type: Number, default: 0 },

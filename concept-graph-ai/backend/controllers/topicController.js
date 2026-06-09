@@ -25,17 +25,26 @@ const extractTopics = async (req, res) => {
       const geminiResult = await ollamaService.extractTopicsAdvanced(text);
 
       if (geminiResult?.topics?.length > 0) {
-        const topics = geminiResult.topics.map(t => ({
-          name:        typeof t === 'string' ? t : (t.name || 'Unknown'),
-          description: t.description || '',
-          subtopics:   Array.isArray(t.subtopics)
-            ? t.subtopics.map(s => (typeof s === 'string' ? s : (s.name || s)))
-            : [],
-        }));
+        const topics = geminiResult.topics
+          .map(t => ({
+            name:        typeof t === 'string' ? t : (t.name || ''),
+            description: t.description || '',
+            subtopics:   Array.isArray(t.subtopics)
+              ? t.subtopics.map(s => (typeof s === 'string' ? s : (s.name || s)))
+              : [],
+          }))
+          .filter(t => t.name.trim().length > 0); // drop any nameless entries
+
+        // Strip course code prefix (e.g. "IFT4528 Cloud Computing" → "Cloud Computing")
+        const rawSubject = geminiResult.subject || topics[0]?.name || 'Concept Map';
+        const cleanSubject = rawSubject
+          .replace(/^[A-Z]{2,6}[-\s]?\d{3,6}\s*/i, '')
+          .replace(/[,;:]+$/, '')
+          .trim() || rawSubject;
 
         result = {
           topics,
-          subject:       geminiResult.subject       || topics[0]?.name || 'Concept Map',
+          subject:       cleanSubject,
           summary:       geminiResult.summary       || '',
           relationships: geminiResult.relationships || [],
           keyTerms:      geminiResult.keyTerms      || [],

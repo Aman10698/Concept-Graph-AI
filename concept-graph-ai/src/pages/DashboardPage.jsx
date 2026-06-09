@@ -3,6 +3,7 @@ import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import DashboardTopicsGraph from '../components/DashboardTopicsGraph';
 import UserMenu from '../components/UserMenu';
 import { Link } from 'react-router-dom';
+import { onEvalChange, offEvalChange } from '../utils/evalBus';
 
 const DashboardPage = () => {
   const [topicsData, setTopicsData] = useState(null);
@@ -50,21 +51,16 @@ const DashboardPage = () => {
   useEffect(() => {
     syncFromStorage();
 
-    // Re-sync when ConceptGraphPage writes evaluation data (same tab via dispatchEvent
-    // or cross-tab via real StorageEvent)
-    const onStorage = (e) => {
-      if (!e.key || e.key === 'learningEvaluationData' || e.key === 'learningTopicsData') {
-        syncFromStorage();
-      }
-    };
-    window.addEventListener('storage', onStorage);
+    // Re-sync when any quiz completes — evalBus fires for same-tab updates,
+    // native storage event fires for cross-tab updates (both handled inside onEvalChange)
+    onEvalChange(syncFromStorage);
 
     // Also re-sync when user switches back to this tab
     const onFocus = () => syncFromStorage();
     window.addEventListener('focus', onFocus);
 
     return () => {
-      window.removeEventListener('storage', onStorage);
+      offEvalChange(syncFromStorage);
       window.removeEventListener('focus', onFocus);
     };
   }, [syncFromStorage]);

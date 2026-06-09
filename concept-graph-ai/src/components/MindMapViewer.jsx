@@ -5,7 +5,7 @@ import QuizMindMap from './QuizMindMap';
  * MindMapViewer — wraps QuizMindMap with the same beautiful canvas
  * circular layout used on the Practice page.
  */
-const MindMapViewer = ({ topics = [], subject = '', evaluationData = {}, onTopicClick }) => {
+const MindMapViewer = ({ topics = [], subject = '', evaluationData = {}, onTopicClick, revision = 0 }) => {
   const [ready, setReady] = useState(false);
 
   // Small delay so the parent container has painted before QuizMindMap measures its width
@@ -60,6 +60,7 @@ const MindMapViewer = ({ topics = [], subject = '', evaluationData = {}, onTopic
           topics={topics}
           evalData={evaluationData}
           courseTitle={subject || 'Concept Map'}
+          revision={revision}
           onSelectTopic={name => onTopicClick?.(name)}
           onSelectSubtopic={(name, parent) => onTopicClick?.(name, parent)}
           onCardClick={(name) => onTopicClick?.(name)}

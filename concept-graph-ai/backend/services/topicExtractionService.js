@@ -58,10 +58,15 @@ const fallbackExtraction = (text) => {
     .slice(0, 8)
     .map(([w]) => w);
 
+  // Derive a readable subject from the top keyword rather than showing 'Unknown'
+  const derivedSubject = mainTopics.length > 0
+    ? mainTopics[0].charAt(0).toUpperCase() + mainTopics[0].slice(1)
+    : 'Concept Map';
+
   return {
     mainTopics,
     topicsData: mainTopics.map(t => ({ name: t, subtopics: [], description: '' })),
-    subject: 'Unknown',
+    subject: derivedSubject,
     summary: '',
     keyTerms: [],
     relationships: [],

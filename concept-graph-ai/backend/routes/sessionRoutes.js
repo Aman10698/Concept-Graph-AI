@@ -1,10 +1,9 @@
-const express    = require('express');
 const router     = require('express').Router();
 const Session    = require('../models/Session');
 const RagDocument = require('../models/RagDocument');
 const ChatHistory = require('../models/ChatHistory');
 const { deleteDocument } = require('../services/ragService');
-const { buildDepGraph, buildModuleDepGraph } = require('../services/depGraphService');
+const { buildDepGraph, buildModuleDepGraph, buildConceptDepGraph } = require('../services/depGraphService');
 const ollamaWorker = require('../services/ollamaWorkerService');
 
 /* ─── helper: compute masteredCount ─────────────────────────── */
@@ -30,8 +29,10 @@ router.post('/sessions/module-dep-graph', async (req, res) => {
     const topicsData     = session.topicsData    || null;
     const evaluationData = session.evaluationData || {};
     const topicDepGraphs = session.topicDepGraphs || {};
+    const conceptGraph   = session.conceptGraph   || null;
+    const conceptMastery = session.conceptMastery || {};
 
-    // Merge topicDepGraphs scores into evaluationData
+    // Merge topicDepGraphs scores into evaluationData (legacy path)
     const mergedEval = { ...evaluationData };
     Object.entries(topicDepGraphs).forEach(([name, data]) => {
       if (!mergedEval[name] && data.score != null) {
@@ -41,11 +42,23 @@ router.post('/sessions/module-dep-graph', async (req, res) => {
       }
     });
 
-    const result = buildModuleDepGraph(moduleName, topicsData, mergedEval, topicDepGraphs);
+    let result;
+    let isConceptMode = false;
+
+    /* ── NEW PATH: session has a concept graph ── */
+    if (conceptGraph?.nodes?.length) {
+      isConceptMode = true;
+      result = buildConceptDepGraph(conceptGraph, conceptMastery);
+      console.log(`✅ module-dep-graph [CONCEPT MODE]: "${moduleName}" → ${result.nodes.length} nodes, ${(result.edges||[]).length} edges`);
+    } else {
+      /* ── LEGACY PATH: topic hierarchy ── */
+      result = buildModuleDepGraph(moduleName, topicsData, mergedEval, topicDepGraphs);
+      console.log(`✅ module-dep-graph [LEGACY]: "${moduleName}" → ${result.nodes.length} nodes (${result.quizzedCount}/${result.totalCount} quizzed)`);
+    }
 
     // Ask Ollama for a module-level root cause if there are weak nodes
     let rootCause = '';
-    if (result.weakNodes.length > 0) {
+    if ((result.weakNodes || []).length > 0) {
       try {
         const ollamaResult = await ollamaWorker.analyzeWeakness(
           moduleName, result.weakNodes, result.scores
@@ -56,13 +69,14 @@ router.post('/sessions/module-dep-graph', async (req, res) => {
       }
     }
 
-    console.log(`✅ module-dep-graph: "${moduleName}" → ${result.nodes.length} nodes (${result.quizzedCount}/${result.totalCount} quizzed) | topicsData=${!!topicsData} topics=${Array.isArray(topicsData?.topics)?topicsData.topics.length:typeof topicsData}`);
-
     res.json({
       success: true,
       data: {
         ...result,
         rootCause,
+        isConceptMode,
+        // Expose root causes array for concept mode visualization
+        rootCauses: result.rootCauses || [],
       },
     });
   } catch (err) {
@@ -143,7 +157,7 @@ router.post('/sessions/explain-node', async (req, res) => {
 router.post('/sessions/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const { title, subject, extractedText, topicsData, questionsData, dependencyData } = req.body;
+    const { title, subject, extractedText, topicsData, questionsData, dependencyData, conceptGraph, mindMap, conceptMastery } = req.body;
 
     const session = await Session.create({
       userId,
@@ -153,13 +167,17 @@ router.post('/sessions/:userId', async (req, res) => {
       topicsData:     topicsData     || null,
       questionsData:  questionsData  || null,
       dependencyData: dependencyData || null,
+      conceptGraph:   conceptGraph   || null,
+      mindMap:        mindMap        || null,   // ← heading-based mind map
+      conceptMastery: conceptMastery || {},
       evaluationData: {},
-      topicCount:     topicsData?.topics?.length || 0,
+      topicCount:     topicsData?.topics?.length || (mindMap?.nodes?.length || conceptGraph?.nodes?.length || 0),
       questionCount:  questionsData?.questions?.length || 0,
       masteredCount:  0,
     });
 
-    console.log(`✅ Session created: ${session._id} for user ${userId}`);
+    const mode = conceptGraph ? 'concept' : mindMap ? 'mindmap' : 'legacy';
+    console.log(`✅ Session created: ${session._id} for user ${userId} [mode: ${mode}]`);
     res.status(201).json({ success: true, sessionId: session._id.toString(), session: _summary(session) });
   } catch (err) {
     console.error('❌ POST /sessions error:', err.message);
@@ -204,6 +222,9 @@ router.get('/sessions/:sessionId', async (req, res) => {
         topicsData:     session.topicsData,
         questionsData:  session.questionsData,
         dependencyData: session.dependencyData,
+        conceptGraph:   session.conceptGraph   || null,
+        mindMap:        session.mindMap        || null,   // ← heading-based mind map
+        conceptMastery: session.conceptMastery || {},
         evaluationData: session.evaluationData || {},
         topicDepGraphs: session.topicDepGraphs || {},
         topicCount:     session.topicCount,
@@ -226,11 +247,14 @@ router.get('/sessions/:sessionId', async (req, res) => {
 ══════════════════════════════════════════════════════════════ */
 router.patch('/sessions/:sessionId/data', async (req, res) => {
   try {
-    const { questionsData, dependencyData, topicDepGraphs } = req.body;
+    const { questionsData, dependencyData, topicDepGraphs, conceptGraph, mindMap, conceptMastery } = req.body;
     const $set = { updatedAt: new Date() };
     if (questionsData   !== undefined) { $set.questionsData  = questionsData;  $set.questionCount = questionsData?.questions?.length || 0; }
     if (dependencyData  !== undefined)   $set.dependencyData  = dependencyData;
     if (topicDepGraphs  !== undefined)   $set.topicDepGraphs  = topicDepGraphs;
+    if (conceptGraph    !== undefined)   $set.conceptGraph    = conceptGraph;
+    if (mindMap         !== undefined)   $set.mindMap         = mindMap;        // ← new
+    if (conceptMastery  !== undefined)   $set.conceptMastery  = conceptMastery;
 
     const session = await Session.findByIdAndUpdate(req.params.sessionId, { $set }, { returnDocument: 'after' }).lean();
     if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
@@ -239,6 +263,40 @@ router.patch('/sessions/:sessionId/data', async (req, res) => {
     res.json({ success: true, updatedAt: session.updatedAt });
   } catch (err) {
     console.error('❌ PATCH /sessions/data error:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   PATCH /api/sessions/:sessionId/concept-mastery
+   Update per-concept mastery scores for concept-graph-mode sessions.
+   Body: { updates: { concept_id: { correct, incorrect, mastery, status } } }
+   Uses dot-notation so updates are always additive (safe merge).
+══════════════════════════════════════════════════════════════ */
+router.patch('/sessions/:sessionId/concept-mastery', async (req, res) => {
+  try {
+    const { updates } = req.body;
+    if (!updates || typeof updates !== 'object')
+      return res.status(400).json({ success: false, message: 'updates object required' });
+
+    const $set = { updatedAt: new Date() };
+    Object.entries(updates).forEach(([conceptId, data]) => {
+      $set[`conceptMastery.${conceptId}`] = { ...data, updatedAt: new Date() };
+    });
+
+    const current = await Session.findById(req.params.sessionId)
+      .select('conceptMastery topicCount').lean();
+    if (!current) return res.status(404).json({ success: false, message: 'Session not found' });
+
+    const merged = { ...(current.conceptMastery || {}), ...updates };
+    const masteredCount = Object.values(merged).filter(v => v?.status === 'strong').length;
+    $set.masteredCount = masteredCount;
+
+    await Session.findByIdAndUpdate(req.params.sessionId, { $set });
+    console.log(`✅ Concept mastery updated: ${req.params.sessionId} — ${Object.keys(updates).length} concept(s)`);
+    res.json({ success: true, masteredCount });
+  } catch (err) {
+    console.error('❌ PATCH /concept-mastery error:', err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
