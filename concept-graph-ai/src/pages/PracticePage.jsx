@@ -44,10 +44,43 @@ export default function PracticePage() {
   useEffect(() => {
     const load = async () => {
       try {
+        // First: read what's currently in localStorage (freshest upload)
+        const localTopicsRaw = localStorage.getItem('learningTopicsData')
+        const localTopics    = localTopicsRaw ? (() => { try { return JSON.parse(localTopicsRaw) } catch { return null } })() : null
+
         const activeId = getActiveSessionId()
         if (activeId) {
           const data = await loadSession(activeId)
           if (data) {
+            // ── Stale-session guard ─────────────────────────────────────────
+            // The active session might be from a DIFFERENT document (e.g. the
+            // user previously had metals-and-non-metals, then uploaded Cloud
+            // Computing).  If localStorage already has a *different* subject
+            // from the session, trust localStorage — it always holds the most
+            // recently uploaded syllabus.
+            const sessionSubject = (data.subject || '').toLowerCase().trim()
+            const localSubject   = (localTopics?.subject || '').toLowerCase().trim()
+            const subjectMismatch =
+              localSubject &&
+              sessionSubject &&
+              localSubject !== sessionSubject
+
+            if (subjectMismatch) {
+              console.warn(
+                `[PracticePage] Session subject "${data.subject}" ≠ localStorage subject "${localTopics?.subject}" — preferring localStorage (freshest upload).`
+              )
+              // Use localStorage data instead
+              if (localTopics)     setTopicsData(localTopics)
+              localStorage.removeItem('learningQuestionsData')
+              const e = localStorage.getItem('learningEvaluationData')
+              const d = localStorage.getItem('learningDependencyData')
+              if (e) setEvalData(JSON.parse(e))
+              if (d) setDependencyData(JSON.parse(d))
+              // sessionText stays '' — no stale document text either
+              return
+            }
+
+            // Session matches the current upload — use its data
             if (data.topicsData)     setTopicsData(data.topicsData)
             // NOTE: do NOT restore questionsData from cache — questions are generated
             // fresh per-topic on demand so they always reflect the correct parent context.
@@ -70,12 +103,12 @@ export default function PracticePage() {
             return
           }
         }
-        const t = localStorage.getItem('learningTopicsData')
-        const e = localStorage.getItem('learningEvaluationData')
-        const d = localStorage.getItem('learningDependencyData')
-        if (t) setTopicsData(JSON.parse(t))
+        // No active session or session not found — fall back to localStorage
+        if (localTopics) setTopicsData(localTopics)
         // Do NOT restore questions from localStorage — always generate fresh per topic
         localStorage.removeItem('learningQuestionsData')
+        const e = localStorage.getItem('learningEvaluationData')
+        const d = localStorage.getItem('learningDependencyData')
         if (e) setEvalData(JSON.parse(e))
         if (d) setDependencyData(JSON.parse(d))
       } catch (err) {

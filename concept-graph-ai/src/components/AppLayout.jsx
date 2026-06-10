@@ -64,12 +64,13 @@ const Icon = {
 
 /* ── Nav Items ──────────────────────────────────────────────── */
 const NAV_ITEMS = [
-  { path: '/dashboard',  label: 'Dashboard',        icon: 'dashboard',  key: 'dashboard'  },
-  { path: '/syllabuses', label: 'Upload Syllabus',   icon: 'syllabuses', key: 'syllabuses' },
-  { path: '/practice',   label: 'Practice',          icon: 'practice',   key: 'practice'   },
-  { path: '/dep-graph',  label: 'Dep. Graph',        icon: 'depgraph',   key: 'depgraph'   },
-  { path: '/rag-study',  label: 'Upload Notes',      icon: 'rag',        key: 'rag'        },
-  { path: '/chats',      label: 'Chats',             icon: 'chat',       key: 'chats'      },
+  { path: '/dashboard',    label: 'Dashboard',        icon: 'dashboard',  key: 'dashboard'  },
+  { path: '/syllabuses',   label: 'Upload Syllabus',  icon: 'syllabuses', key: 'syllabuses' },
+  { path: '/my-syllabuses',label: 'My Syllabuses',    icon: 'learn',      key: 'mysyllabuses'},
+  { path: '/practice',     label: 'Practice',         icon: 'practice',   key: 'practice'   },
+  { path: '/dep-graph',    label: 'Dep. Graph',       icon: 'depgraph',   key: 'depgraph'   },
+  { path: '/rag-study',    label: 'Upload Notes',     icon: 'rag',        key: 'rag'        },
+  { path: '/chats',        label: 'Chats',            icon: 'chat',       key: 'chats'      },
 ]
 
 const NAV_BOTTOM = [
@@ -93,7 +94,8 @@ export default function AppLayout({ children }) {
   const isNavActive = (item) => {
     if (item.key === 'dashboard')  return location.pathname === '/dashboard'
     if (item.key === 'practice')   return location.pathname === '/practice'
-    if (item.key === 'syllabuses') return location.pathname === '/syllabuses'
+    if (item.key === 'syllabuses')   return location.pathname === '/syllabuses'
+    if (item.key === 'mysyllabuses') return location.pathname === '/my-syllabuses'
     if (item.key === 'depgraph')   return location.pathname === '/dep-graph'
     if (item.key === 'settings')   return location.pathname === '/profile'
     if (item.key === 'rag')        return location.pathname === '/rag-study'
@@ -106,7 +108,8 @@ export default function AppLayout({ children }) {
     const p = location.pathname
     if (p === '/dashboard')  return { title: 'Dashboard',         sub: 'Track your learning progress' }
     if (p === '/practice')   return { title: 'Practice',           sub: 'Quiz yourself on any topic' }
-    if (p === '/syllabuses') return { title: 'Upload Syllabus',    sub: 'Upload a PDF or image to generate your concept graph' }
+    if (p === '/syllabuses')    return { title: 'Upload Syllabus',  sub: 'Upload a PDF or image to generate your concept graph' }
+    if (p === '/my-syllabuses') return { title: 'My Syllabuses',    sub: 'All your uploaded syllabuses and their progress' }
     if (p === '/dep-graph')  return { title: 'Prerequisite Graph', sub: 'AI-generated dependency analysis from your quiz answers' }
     if (p === '/profile')    return { title: 'Settings',           sub: 'Manage your account' }
     if (p === '/rag-study')  return { title: 'Upload Notes',       sub: 'Upload your notes or textbooks to power the Chats assistant' }

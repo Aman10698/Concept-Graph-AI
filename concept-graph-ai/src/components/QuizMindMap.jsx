@@ -1,19 +1,18 @@
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 
 /* ─── Layout constants ───────────────────────────────────── */
 const ROOT_H_MIN = 52
 const ROOT_H_2L  = 70
 const ROOT_FONT  = 'bold 14px Inter,sans-serif'
 const ROOT_PAD_X = 24
-const TOPIC_W = 165, TOPIC_H = 96
-const SUB_W   = 148, SUB_H   = 70
-const H_GAP1  = 68    // root → topics
-const H_GAP2  = 44    // topics → first subtopic
-const V_GAP   = 10    // between sibling subtopics
-const COL_GAP = 24    // horizontal gap between topic columns
-const PAD     = 52
+const TOPIC_W  = 170, TOPIC_H  = 90
+const SUB_W    = 152, SUB_H    = 64
+const H_GAP1   = 72    // root → module row
+const H_GAP2   = 48    // module → first topic
+const V_GAP    = 12    // between sibling topics
+const COL_GAP  = 28    // horizontal gap between module columns
+const PAD      = 56
 const MIN_SCALE = 0.05, MAX_SCALE = 4
-const CANVAS_H  = 800
 
 /* ─── Measure root node size ─────────────────────────────── */
 let _measureCtx = null
@@ -24,7 +23,7 @@ const measureRootNode = (title) => {
   }
   _measureCtx.font = ROOT_FONT
   const words  = (title || 'Course').split(' ')
-  const maxW   = 300, minW = 160
+  const maxW   = 320, minW = 180
   const singleW = _measureCtx.measureText(title).width + ROOT_PAD_X * 2
   if (singleW <= maxW) return { w: Math.max(minW, Math.ceil(singleW)), h: ROOT_H_MIN }
   let bestW = maxW
@@ -59,10 +58,11 @@ const aggregateRating = arr => {
   return 'partial'
 }
 
-/* ─── Recursively flatten ALL descendants into a name list ── */
+/* ─── Normalize topic name ───────────────────────────────── */
 const _normName = s =>
   (s || '').replace(/^\s*[\d]+([\.][\d]*)?\.*\s*/, '').toLowerCase().replace(/\s+/g, ' ').trim()
 
+/* ─── Recursively flatten ALL descendants into a name list ── */
 function flattenDescendants(subtopics) {
   if (!Array.isArray(subtopics)) return []
   const result = []
@@ -86,7 +86,6 @@ function buildColumns(rawTopics, evalData) {
     if (!key) continue
     const subs = typeof t === 'object' && Array.isArray(t.subtopics) ? t.subtopics : []
     if (seen.has(key)) {
-      // merge
       seen.get(key).descendants.push(...flattenDescendants(subs))
     } else {
       seen.set(key, { name, descendants: flattenDescendants(subs) })
@@ -102,10 +101,9 @@ function buildColumns(rawTopics, evalData) {
       globalSeen.add(k)
       return true
     })
-    const subRatings  = deduped.map(d => evalData?.[d]?.rating)
-    const allTested   = deduped.length > 0 && subRatings.every(r => r != null)
-    const rating      = evalData?.[col.name]?.rating ?? (allTested ? aggregateRating(subRatings) : undefined)
-    // Keep ALL topics — even those without subtopics — so the mind map renders them as leaf nodes
+    const subRatings = deduped.map(d => evalData?.[d]?.rating)
+    const allTested  = deduped.length > 0 && subRatings.every(r => r != null)
+    const rating     = evalData?.[col.name]?.rating ?? (allTested ? aggregateRating(subRatings) : undefined)
     return { name: col.name, descendants: deduped, rating }
   })
 }
@@ -132,6 +130,7 @@ function buildLayout(topics, evalData, courseTitle) {
       rating: col.rating, parent: '__root__',
     })
 
+    // Each topic fans directly from its module node (not chained to sibling)
     const subY0 = topicY + TOPIC_H + H_GAP2
     col.descendants.forEach((dName, si) => {
       nodes.push({
@@ -140,8 +139,7 @@ function buildLayout(topics, evalData, courseTitle) {
         y: subY0 + si * (SUB_H + V_GAP),
         w: SUB_W, h: SUB_H,
         rating: evalData?.[dName]?.rating,
-        // Chain: each subtopic's parent is the previous one (creates sequential arrow chain)
-        parent: si === 0 ? `t${ci}` : `s${ci}_${si - 1}`,
+        parent: `t${ci}`,    // ← ALL topics fan from the module, not chained
         topicId: `t${ci}`,
       })
     })
@@ -176,7 +174,6 @@ function wrapText(ctx, text, x, y, maxW, lineH, maxLines = 2) {
   }
   if (line && lines.length < maxLines) lines.push(line)
 
-  // Draw each line; if still too wide (e.g. long compound word), truncate with ellipsis
   lines.forEach((l, i) => {
     let drawn = l
     if (ctx.measureText(drawn).width > maxW) {
@@ -189,17 +186,20 @@ function wrapText(ctx, text, x, y, maxW, lineH, maxLines = 2) {
   return y + lines.length * lineH
 }
 
-function drawArrow(ctx, x1, y1, x2, y2, col) {
+/* ─── Draw a single connector line (straight, no arrowhead) ─ */
+function drawConnector(ctx, x1, y1, x2, y2, col) {
   const my = (y1 + y2) / 2
   ctx.beginPath()
   ctx.moveTo(x1, y1)
-  ctx.bezierCurveTo(x1, my, x2, my, x2, y2 - 7)
-  ctx.strokeStyle = col + 'aa'; ctx.lineWidth = 1.6; ctx.stroke()
-  // arrowhead
+  ctx.bezierCurveTo(x1, my, x2, my, x2, y2)
+  ctx.strokeStyle = col + '88'
+  ctx.lineWidth = 1.5
+  ctx.stroke()
+  // small dot at destination
   ctx.beginPath()
-  ctx.moveTo(x2, y2)
-  ctx.lineTo(x2 - 5, y2 - 9); ctx.lineTo(x2 + 5, y2 - 9)
-  ctx.closePath(); ctx.fillStyle = col + 'aa'; ctx.fill()
+  ctx.arc(x2, y2, 3, 0, Math.PI * 2)
+  ctx.fillStyle = col + 'aa'
+  ctx.fill()
 }
 
 function drawCard(ctx, node, isHov, courseTitle) {
@@ -207,9 +207,9 @@ function drawCard(ctx, node, isHov, courseTitle) {
   const col = ratingColor(rating)
   const R   = 12
 
-  ctx.shadowColor   = isHov ? col + '55' : 'rgba(0,0,0,0.09)'
-  ctx.shadowBlur    = isHov ? 20 : 9
-  ctx.shadowOffsetY = isHov ? 5  : 3
+  ctx.shadowColor   = isHov ? col + '55' : 'rgba(0,0,0,0.08)'
+  ctx.shadowBlur    = isHov ? 18 : 8
+  ctx.shadowOffsetY = isHov ? 4  : 3
 
   if (kind === 'root') {
     const g = ctx.createLinearGradient(x, y, x + w, y + h)
@@ -217,7 +217,7 @@ function drawCard(ctx, node, isHov, courseTitle) {
     rrect(ctx, x, y, w, h, R); ctx.fillStyle = g; ctx.fill()
     ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
     rrect(ctx, x, y, w, h, R)
-    ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1.5; ctx.stroke()
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.5; ctx.stroke()
 
     ctx.fillStyle = '#fff'; ctx.font = ROOT_FONT
     ctx.textAlign = 'center'; ctx.textBaseline = 'top'
@@ -237,25 +237,39 @@ function drawCard(ctx, node, isHov, courseTitle) {
     for (const l of lines) { ctx.fillText(l, x + w / 2, ty); ty += lineH }
 
   } else {
-    // topic or subtopic card
-    rrect(ctx, x, y, w, h, R); ctx.fillStyle = '#fff'; ctx.fill()
+    // module (topic) or leaf (subtopic)
+    const isModule = kind === 'topic'
+
+    // background
+    rrect(ctx, x, y, w, h, R)
+    if (isModule) {
+      const g2 = ctx.createLinearGradient(x, y, x, y + h)
+      g2.addColorStop(0, '#ffffff')
+      g2.addColorStop(1, col + '11')
+      ctx.fillStyle = g2
+    } else {
+      ctx.fillStyle = '#fff'
+    }
+    ctx.fill()
     ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
 
-    // top colour bar
+    // top colour bar (thicker for modules)
     ctx.save(); rrect(ctx, x, y, w, h, R); ctx.clip()
-    ctx.fillStyle = col; ctx.fillRect(x, y, w, 4); ctx.restore()
+    ctx.fillStyle = col
+    ctx.fillRect(x, y, w, isModule ? 5 : 3)
+    ctx.restore()
 
     // border
     rrect(ctx, x, y, w, h, R)
     ctx.strokeStyle = col + (isHov ? 'cc' : '44')
-    ctx.lineWidth = isHov ? 2 : 1.5; ctx.stroke()
+    ctx.lineWidth = isHov ? 2 : isModule ? 1.8 : 1.4
+    ctx.stroke()
 
-    const pad  = 10
-    let curY   = y + 14
-    const fs   = kind === 'topic' ? 12 : 11
-    const lh   = fs + 3
+    const pad = 10
+    let curY  = y + 14
+    const fs  = isModule ? 12 : 11
+    const lh  = fs + 4
 
-    // Clip to card so no text ever renders outside the rounded rect boundary
     ctx.save()
     rrect(ctx, x, y, w, h, R)
     ctx.clip()
@@ -267,10 +281,10 @@ function drawCard(ctx, node, isHov, courseTitle) {
 
     ctx.restore()
 
-    // badge
+    // rating badge
     const label = ratingLabel(rating)
     ctx.font = 'bold 8px Inter,sans-serif'
-    const bw = ctx.measureText(label).width + 12, bh = 14, br = 7
+    const bw = ctx.measureText(label).width + 12, bh = 13, br = 6
     rrect(ctx, x + pad, curY, bw, bh, br)
     ctx.fillStyle = col + '22'; ctx.fill()
     ctx.strokeStyle = col + '55'; ctx.lineWidth = 1
@@ -281,7 +295,7 @@ function drawCard(ctx, node, isHov, courseTitle) {
     if (isHov) {
       ctx.font = '8px Inter,sans-serif'
       ctx.fillStyle = col; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'
-      ctx.fillText('Quiz →', x + w - pad, y + h - pad / 2)
+      ctx.fillText('Quiz →', x + w - pad, y + h - 6)
     }
   }
   ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
@@ -293,22 +307,38 @@ function drawCard(ctx, node, isHov, courseTitle) {
 export default function QuizMindMap({
   topics = [], evalData = {}, courseTitle = '',
   onSelectTopic, onSelectSubtopic, onCardClick,
-  revision = 0,   // increment from parent to trigger an immediate redraw
+  revision = 0,
 }) {
   const wrapRef   = useRef(null)
   const canvasRef = useRef(null)
   const nodesRef  = useRef([])
   const vpRef     = useRef({ ox: 0, oy: 0, scale: 1 })
-  const [hovered, setHovered] = useState(null)
-  const [width,   setWidth]   = useState(0)
-  const [vpVer,   setVpVer]   = useState(0)
+  const [hovered,  setHovered]  = useState(null)
+  const [width,    setWidth]    = useState(0)
+  const [vpVer,    setVpVer]    = useState(0)
+  // Dynamic canvas height — computed from actual layout so nothing is ever clipped
+  const [canvasH,  setCanvasH]  = useState(700)
 
-  // When the parent bumps `revision` (e.g. after a quiz), force an immediate redraw
-  // without remounting the whole canvas (avoids the 120 ms blank-canvas flash)
+  // Recompute canvas height whenever topics change
+  const computedLayout = useMemo(() => {
+    if (!topics.length) return null
+    return buildLayout(topics, evalData, courseTitle)
+  // evalData intentionally omitted — height only depends on topic structure
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topics, courseTitle])
+
+  useEffect(() => {
+    if (!computedLayout) return
+    const needed = Math.max(700, computedLayout.totalH + PAD * 2)
+    setCanvasH(needed)
+  }, [computedLayout])
+
+  // Bump revision → immediate redraw
   useEffect(() => {
     if (revision > 0) setVpVer(v => v + 1)
   }, [revision])
 
+  // ResizeObserver for responsive width
   useEffect(() => {
     const el = wrapRef.current; if (!el) return
     const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width || el.offsetWidth))
@@ -318,7 +348,7 @@ export default function QuizMindMap({
 
   const fitView = useCallback(() => {
     const vw = wrapRef.current?.offsetWidth || width
-    const vh = CANVAS_H
+    const vh = canvasH
     const { nodes } = buildLayout(topics, evalData, courseTitle)
     if (!nodes.length) return
     const xs = nodes.map(n => [n.x, n.x + n.w]).flat()
@@ -334,7 +364,7 @@ export default function QuizMindMap({
     }
     setVpVer(v => v + 1)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [width, topics, courseTitle])
+  }, [width, topics, courseTitle, canvasH])
 
   /* DRAW */
   useEffect(() => {
@@ -343,7 +373,7 @@ export default function QuizMindMap({
     const ctx = canvas.getContext('2d')
     const dpr = window.devicePixelRatio || 1
     const W   = Math.max(width, 300)
-    const H   = CANVAS_H
+    const H   = canvasH
     canvas.width  = Math.round(W * dpr)
     canvas.height = Math.round(H * dpr)
     canvas.style.width  = W + 'px'
@@ -361,26 +391,28 @@ export default function QuizMindMap({
 
     const byId = Object.fromEntries(nodes.map(n => [n.id, n]))
 
-    /* PASS 1 — arrows */
+    /* PASS 1 — connectors */
     nodes.filter(n => n.parent).forEach(n => {
       const p = byId[n.parent]; if (!p) return
       const col = ratingColor(n.rating)
-      drawArrow(ctx, p.x + p.w / 2, p.y + p.h, n.x + n.w / 2, n.y, col)
+      // connect from bottom-centre of parent to top-centre of child
+      drawConnector(ctx, p.x + p.w / 2, p.y + p.h, n.x + n.w / 2, n.y, col)
     })
 
     /* PASS 2 — cards */
     nodes.forEach(n => drawCard(ctx, n, hovered?.id === n.id, courseTitle))
 
     ctx.restore()
-  }, [topics, evalData, courseTitle, hovered, width, vpVer])
+  }, [topics, evalData, courseTitle, hovered, width, vpVer, canvasH])
 
+  // Auto-fit on topics or size change
   useEffect(() => {
-    if (width > 0 && topics.length) {
-      const id = setTimeout(fitView, 120)
+    if (width > 0 && topics.length && canvasH > 100) {
+      const id = setTimeout(fitView, 140)
       return () => clearTimeout(id)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topics, width])
+  }, [topics, width, canvasH])
 
   /* wheel zoom */
   useEffect(() => {
@@ -451,7 +483,6 @@ export default function QuizMindMap({
         const n = hitNode(e.clientX, e.clientY)
         if (n && onCardClick) {
           const byId = Object.fromEntries(nodesRef.current.map(x => [x.id, x]))
-          // Find parent topic (kind === 'topic') for context
           const topicNode = n.kind === 'topic' ? n : (n.topicId ? byId[n.topicId] : null)
           const parentName = topicNode?.name || courseTitle
           onCardClick(n.name, parentName)
@@ -477,7 +508,7 @@ export default function QuizMindMap({
     const vw = wrapRef.current?.offsetWidth || width
     const { ox, oy, scale } = vpRef.current
     const ns = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor))
-    const mx = vw / 2, my = CANVAS_H / 2
+    const mx = vw / 2, my = canvasH / 2
     vpRef.current = { scale: ns, ox: mx - (mx - ox) * (ns / scale), oy: my - (my - oy) * (ns / scale) }
     setVpVer(v => v + 1)
   }
@@ -512,11 +543,12 @@ export default function QuizMindMap({
         Scroll to zoom · Drag to pan · Click a card to quiz
       </div>
 
-      {/* Canvas */}
+      {/* Canvas — height is dynamic, never clips any node */}
       <div ref={wrapRef} style={{
-        width: '100%', height: CANVAS_H, overflow: 'hidden', borderRadius: 16,
+        width: '100%', height: canvasH, overflow: 'hidden', borderRadius: 16,
         background: 'linear-gradient(135deg,#f8faff 0%,#eef2ff 100%)',
         border: '1.5px solid rgba(99,102,241,0.1)', position: 'relative',
+        transition: 'height 0.3s ease',
       }}>
         <canvas ref={canvasRef} style={{ display: 'block', cursor: 'grab' }} />
       </div>

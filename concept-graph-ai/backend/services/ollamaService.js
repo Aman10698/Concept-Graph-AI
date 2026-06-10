@@ -70,18 +70,22 @@ const extractJSON = (text) => {
 };
 
 /* ─── Heading outline pre-extractor ──────────────────────────────────────────────
- * Converts raw chapter text into a compact heading-only outline (~1–3 KB).
- * Used by extractMindMapStructure and extractConcepts to reduce the number
- * of tokens sent to Ollama by 90 % without losing any structural information.
- * Body paragraphs are discarded — the LLM ignores them for graph building.
+ * Converts raw syllabus text into a compact heading-only outline.
+ * A syllabus with 6 modules × 10 topics = ~60 lines × ~40 chars = ~2,400 chars.
+ * Sending the outline instead of the full 40,000-char document means the LLM
+ * only sees ~3,000 chars of input — well within any local model's context window.
+ * Without this, llama3.1's 8,192-token context is exhausted by the document itself
+ * and later modules are simply invisible to the model.
  ────────────────────────────────────────────────────────────── */
-const extractHeadingOutline = (text) => {
-  const lines = text
+const extractHeadingOutline = (rawText) => {
+  // Work line-by-line on the original text (preserves indentation signals)
+  const lines = rawText
     .replace(/\r\n/g, '\n')
     .split('\n')
     .map(l => l.trim())
-    .filter(l => l.length >= 2);
+    .filter(l => l.length >= 2 && l.length <= 150);
 
+  // Lines to skip — pedagogical noise, never topic names
   const NOISE = [
     /^(let'?s\s+(do|think|discuss|recall|explore))/i,
     /^do\s+this/i,
@@ -94,36 +98,50 @@ const extractHeadingOutline = (text) => {
     /^example\b/i,
     /^story\b/i,
     /^dialogue\b/i,
-    /^introduction$/i,
-    /^conclusion$/i,
     /^references?$/i,
+    /^bibliography/i,
+    /^course\s+outcome/i,
+    /^learning\s+objective/i,
+    /^assessment\s+(scheme|pattern)/i,
+    /^examination\s+(scheme|pattern)/i,
   ];
-  const isNoiseLine = (l) => NOISE.some(rx => rx.test(l));
+  const isNoise = (l) => NOISE.some(rx => rx.test(l));
 
   const isHeading = (l) => {
-    if (l.length > 80) return false;          // too long — likely a sentence
-    if (isNoiseLine(l)) return false;
-    if (/^\d+(\.\d+)*\.?\s+\S/.test(l)) return true;  // numbered: "1.", "1.1", "2.3.4"
-    if (/^[A-Z][A-Z\s]{3,}$/.test(l)) return true;    // ALL CAPS heading
-    if (/^[A-Z][a-z].*[a-z]$/.test(l) && l.length <= 60) return true; // Title case, short
-    if (/^[\u2022\-*]\s+\S/.test(l) && l.length <= 60) return true;    // short bullet/list item
+    if (isNoise(l)) return false;
+    // 1. Numbered items — "1.", "1.1", "2.3.4", "I.", "II."
+    if (/^\d+(\.\d+)*\.?\s+\S/.test(l)) return true;
+    // 2. Roman numerals — "I.", "II.", "III.", "IV."
+    if (/^(I{1,3}|IV|V?I{0,3})\.[\s).]/.test(l)) return true;
+    // 3. Lettered items — "a.", "b)", "A.", "B)"
+    if (/^[a-zA-Z][\.)\s]\s+\S/.test(l) && l.length <= 100) return true;
+    // 4. MODULE / UNIT / CHAPTER / SECTION keyword
+    if (/^(module|unit|chapter|section|part|topic|lesson)\s+[\d\w]/i.test(l)) return true;
+    // 5. ALL-CAPS short heading — "INTRODUCTION TO AI"
+    if (/^[A-Z][A-Z\s]{3,60}$/.test(l)) return true;
+    // 6. Title Case phrase followed by colon — "Search Algorithms:"
+    if (/^[A-Z][a-zA-Z\s]+:$/.test(l) && l.length <= 80) return true;
+    // 7. Short Title Case line (no sentence-ending period)
+    if (/^[A-Z][a-z]/.test(l) && !l.endsWith('.') && l.length <= 80) return true;
+    // 8. Bullet / dash / star list items
+    if (/^[\u2022\-\*•]\s+\S/.test(l) && l.length <= 100) return true;
     return false;
   };
 
+  // Collect ALL matching heading lines — no per-scan break so we get every module
   const outline = [];
   let charCount = 0;
-  const MAX_OUTLINE_CHARS = 3000;
+  const MAX_CHARS = 12000; // enough for 300+ topic lines
 
-  for (const line of lines) {
-    if (charCount >= MAX_OUTLINE_CHARS) break;
-    if (!isHeading(line)) continue;
-    outline.push(line);
-    charCount += line.length + 1;
-  }
+  // Always include the very first non-empty line (document title / course name)
+  if (lines[0]) { outline.push(lines[0]); charCount += lines[0].length + 1; }
 
-  // Always prepend the very first line (document title)
-  if (outline.length === 0 || outline[0] !== lines[0]) {
-    outline.unshift(lines[0] || '');
+  for (let i = 1; i < lines.length; i++) {
+    if (charCount >= MAX_CHARS) break;
+    if (isHeading(lines[i])) {
+      outline.push(lines[i]);
+      charCount += lines[i].length + 1;
+    }
   }
 
   return outline.join('\n');
@@ -229,7 +247,6 @@ const flatNodesToTopicsData = (nodes, edges) => {
   // Find root nodes (not a target in any edge)
   const targetIds = new Set((edges || []).map(e => e.target));
   const rootIds = (nodes || []).map(n => n.id).filter(id => !targetIds.has(id));
-
   const buildSubtopics = (id, depth = 0) => {
     if (depth > 5) return [];
     const kids = children[id] || []; // NO artificial child limit
@@ -271,173 +288,382 @@ const flatNodesToTopicsData = (nodes, edges) => {
   };
 };
 
-const extractTopicsAdvanced = async (text) => {
-  // 40 000 chars ≈ 12–15 PDF pages — enough for a full 5-module syllabus
-  const doc = text.replace(/\s+/g, ' ').trim().slice(0, 40000);
+/* ─── Admin / noise patterns ─────────────────────────────────────────────────
+ * Lines matching any of these are never included as module or topic nodes.
+ * ──────────────────────────────────────────────────────────────────────────── */
+const ADMIN_RX = [
+  /^course\s+outcome/i, /^learning\s+obj/i,
+  /^assessment/i, /^examination/i, /^evaluation/i,
+  /^references?\s*$/, /^bibliography/i, /^attendance/i,
+  /^faculty/i, /^textbook/i, /^credit/i,
+  /^written\s+exam/i, /^seminar/i, /^summary\s*$/i, /^glossary\s*$/i,
+  /^total\s+(marks|hours?)/i, /^course\s+(code|title)/i,
+  /^prerequisite/i, /^modes?\s+of\s+eval/i, /^further\s+reading/i,
+  /^(t\s+p\s+c|theory|practical|credits?)\s*$/i,
+  /^(ia|ee|ia\s*ee|ese)\s*$/i,
+  /^(components?|weightage|marks)\s*$/i,
+  /^(co-?requisites?|pre-?requisites?\/exposure)/i,
+  /^catalog\s+description/i,
+  /^(the\s+)?objective\s+of\s+this\s+course/i,
+  /^on\s+completion\s+of/i, /^version\s*:/i,
+  /^date\s+of\s+(approval|revision)/i, /^approved\s+by/i,
+  /^\bco\s*-?\s*\d+\b/i,
+];
+const isAdminLine = l => ADMIN_RX.some(rx => rx.test((l || '').trim()));
 
-  // ── Syllabus-aware prompt ─────────────────────────────────────────────────
-  // This prompt is specifically designed for university syllabi that have
-  // multiple modules/units, each containing several topics and subtopics.
-  const prompt = `You are an expert academic syllabus analyzer.
-Your ONLY job is to extract the complete topic hierarchy from the given syllabus text.
+/* ─── Stop-extraction triggers (reference / grading sections) ─────────────── */
+const STOP_RX = [
+  /^references?\s*$/i, /^bibliography\s*$/i,
+  /^(text\s*)?books?\s*(reference|:)?\s*$/i,
+  /^suggested\s+(reading|books?)/i, /^additional\s+reading/i,
+  /^course\s+outcomes?/i, /^learning\s+objectives?/i,
+  /^evaluation\s+(scheme|pattern)/i, /^examination\s+(scheme|pattern)/i,
+  /^components?\s+[a-z]/i, /^weightage/i, /^attendance/i,
+  /^overall\s+[\d.]/i, /^all:\s*attendance/i,
+  /^modes?\s+of\s+eval/i,             // "Modes of Evaluation"
+  /^bloom['s]*\s+taxonomy/i,           // Bloom's Taxonomy header
+];
+const isStop = l => STOP_RX.some(rx => rx.test((l || '').trim()));
 
-CRITICAL INSTRUCTIONS:
-1. Find EVERY module/unit in the syllabus (there are usually 3–6 modules).
-2. Under each module, list EVERY topic and subtopic mentioned.
-3. DO NOT skip any module. DO NOT skip any topic.
-4. The root node = the course/subject name.
-5. Level 1 = Module names (e.g. "Module 1: Cloud Computing", "Unit 2: Virtualization").
-6. Level 2 = Topics inside each module.
-7. Level 3 = Sub-topics or specific items listed under a topic.
-8. Keep labels concise (≤ 6 words). Use Title Case.
-9. Return ONLY valid JSON — no markdown, no explanation.
+/* ─── LLM meta-commentary patterns (preamble lines the model adds) ─────────── */
+const LLM_META_RX = [
+  /^here are/i, /^here is/i, /^below are/i, /^the following/i,
+  /^these are/i, /^based on/i, /^sure[,!]?$/i, /^certainly/i,
+  /^of course/i, /^note:/i, /^please note/i, /^the topics?/i,
+  /^topic names?/i, /^list of topics?/i, /^topics? for/i,
+  /^topics? in\b/i, /^topics? taught/i, /^i['\u2019]ll/i,
+];
+const isLLMMeta = l => LLM_META_RX.some(rx => rx.test((l || '').trim()));
 
-Output format (follow EXACTLY):
+/* ─── Bloom's taxonomy / course-outcome level markers ──────────────────────── */
+// These appear in syllabuses as "L1", "L2", "L1 and L2", "CO1 L2" etc.
+const isBloomLevel = l => /^(l\s*\d+)(\s+(and|&)\s+l\s*\d+)*\s*$/i.test((l || '').trim()) ||
+                         /^(co\s*\d+\s*)+l\s*\d+/i.test((l || '').trim());
+
+/* ─── JS-first course title extractor (no LLM needed for this) ─────────────── */
+const extractSubjectNameJS = (rawText) => {
+  const stripCode = s => (s || '')
+    .replace(/^[A-Z]{2,6}[-\s]?\d{3,6}\s*/i, '')
+    .replace(/^\d{3,6}[A-Z]{0,4}\s*/i, '')
+    .replace(/[,;:]+$/, '').trim() || s;
+
+  // Scan first 30 lines for a course-title candidate
+  const lines = rawText.replace(/\r\n/g, '\n').split('\n')
+    .slice(0, 30).map(l => l.trim()).filter(l => l.length >= 4);
+
+  for (const line of lines) {
+    if (isAdminLine(line) || isStop(line)) continue;
+    if (/^module\s+\d/i.test(line)) break;  // reached syllabus body — stop
+    if (/^(version|date|approved|catalog|co-?req)/i.test(line)) continue;
+    if (/\d{4}/.test(line) && line.length < 20) continue;  // year-only lines
+    // Accept ALL-CAPS or Title-Case line of reasonable length
+    const candidate = stripCode(line);
+    if (candidate.length >= 4 && candidate.length <= 80 &&
+        !isAdminLine(candidate) && !isStop(candidate) &&
+        /[a-zA-Z]{3}/.test(candidate)) {
+      return candidate;
+    }
+  }
+  return '';
+};
+
+/* ─── Split the full syllabus text into per-module sections ───────────────── */
+const splitIntoModuleSections = text => {
+  const EXPLICIT_RX = /^(module|unit|chapter|section|part)\s*[-\u2013]?\s*\d+/i;
+  const ALLCAPS_RX  = /^[A-Z][A-Z\s\-\/&]{3,55}$/;
+  const toTitle = s => s.replace(/\b\w+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  const allLines = text.replace(/\r\n/g, '\n').split('\n').map(l => l.trim());
+
+  const starts = [];
+  for (let i = 0; i < allLines.length; i++) {
+    if (EXPLICIT_RX.test(allLines[i]) && !isAdminLine(allLines[i])) starts.push(i);
+  }
+  if (starts.length < 2) return null;
+
+  return starts.map((s, mi) => {
+    const e   = starts[mi + 1] || allLines.length;
+    const hdr = allLines[s];
+    const m   = hdr.match(/^(module|unit|chapter|section|part)\s*[-\u2013]?\s*(\d+)\s*[:\-\u2013]?\s*(.*)/i);
+    let name;
+    if (m) {
+      const kw     = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
+      const inline = m[3] ? toTitle(m[3].trim()) : '';
+      if (!inline) {
+        // Scan ahead (up to 5 lines) for an ALL-CAPS subtitle, skipping blank lines
+        let subtitle = '';
+        for (let k = s + 1; k < Math.min(s + 6, e); k++) {
+          const candidate = (allLines[k] || '').trim();
+          if (!candidate) continue;                    // skip blank lines
+          if (ALLCAPS_RX.test(candidate)) { subtitle = toTitle(candidate); break; }
+          break; // non-blank, non-ALL-CAPS → stop looking
+        }
+        name = subtitle ? (kw + ' ' + m[2] + ': ' + subtitle) : (kw + ' ' + m[2]);
+      } else {
+        name = kw + ' ' + m[2] + ': ' + inline;
+      }
+    } else { name = hdr || 'Module'; }
+    // Stop content at first reference/grading line
+    const contentLines = allLines.slice(s + 1, e);
+    let stopAt = contentLines.length;
+    for (let ci = 0; ci < contentLines.length; ci++) {
+      if (isStop(contentLines[ci])) { stopAt = ci; break; }
+    }
+    return { name, content: contentLines.slice(0, stopAt).join('\n') };
+  });
+};
+
+/* ─── Clean a raw concept string before storing ───────────────────────────── */
+const cleanConcept = s => (s || '').trim()
+  .replace(/^[\-*•\d.)\s]+/, '')
+  .replace(/[.,:;]+$/, '')
+  .trim();
+
+const isValidConcept = s => {
+  if (!s || s.length < 3 || s.length > 100) return false;
+  if (isAdminLine(s) || isStop(s) || isLLMMeta(s) || isBloomLevel(s)) return false;
+  if (/\b(pearson|wiley|mcgraw|oxford|cambridge|prentice|tata|phi|tmh|springer)\b/i.test(s)) return false;
+  if (/^['\u2018\u2019\u201c\u201d]/.test(s)) return false;
+  if ((s.match(/\d/g)||[]).length / s.length > 0.35) return false;
+  if (/^(module|unit|chapter|section|part)\s+\d+/i.test(s)) return false;
+  return true;
+};
+
+/* ─── Ask Ollama to extract ALL concepts from ONE module ─────────────────────
+ * Uses a hierarchical JSON prompt so the model is forced to enumerate EVERY
+ * teachable concept: headings, subheadings, tools, methods, types, processes,
+ * classifications, key terms — not just top-level section names.
+ *
+ * Falls back to plain-text line parsing if JSON is malformed.
+ * ──────────────────────────────────────────────────────────────────────────── */
+const extractModuleTopicsWithLLM = async (moduleName, moduleContent) => {
+  const contentSlice = moduleContent.slice(0, 3000);
+
+  const prompt =
+`You are an expert at extracting teachable concepts from academic content.
+
+Analyze the module below and extract EVERY teachable concept.
+
+Include:
+- Section headings and subheadings
+- Named methods, tools, algorithms
+- Types and classifications
+- Processes and techniques
+- Key terms and named concepts
+- Anything a student would need to learn
+
+Exclude:
+- Reference books, authors, publishers
+- Marks, hours, weightage, attendance
+- Course outcomes (CO1, CO2) and Bloom levels (L1, L2)
+
+CRITICAL: Do NOT summarize. Do NOT merge. Every concept gets its own entry.
+Missing a concept is a failure.
+
+Return ONLY valid JSON — no explanation, no markdown fences:
 {
-  "subject": "Full Course Name",
-  "summary": "One sentence course overview.",
-  "nodes": [
-    { "id": "root", "label": "Course Name", "level": 0 },
-    { "id": "m1", "label": "Module 1: Name", "level": 1 },
-    { "id": "m1t1", "label": "Topic Name", "level": 2 },
-    { "id": "m1t1s1", "label": "Sub-topic", "level": 3 }
-  ],
-  "edges": [
-    { "source": "root", "target": "m1" },
-    { "source": "m1", "target": "m1t1" },
-    { "source": "m1t1", "target": "m1t1s1" }
-  ],
-  "keyTerms": []
+  "topics": [
+    {
+      "name": "Main Section or Topic Name",
+      "subtopics": ["Subtopic A", "Method B", "Tool C", "Type D"]
+    }
+  ]
 }
 
-Rules:
-- Every module MUST appear as a level-1 node connected to root.
-- Every topic under a module MUST appear as a level-2 node connected to its module.
-- Use unique ids (e.g. m1, m1t1, m1t2, m2, m2t1...).
-- Do NOT include: course outcomes, assessment schemes, references, exam patterns, faculty info.
-- Do NOT limit yourself to 8 children — include ALL topics for each module.
-
-SYLLABUS TEXT:
----
-${doc}
----
-
-Return ONLY the JSON object. No other text. Include ALL modules and ALL their topics.`;
-
-  // ── Admin-section filter ─────────────────────────────────────────────────
-  const ADMIN_PATTERNS = [
-    /^course\s+outcome/i, /^learning\s+objective/i, /\bco\d+\b/i,
-    /^modes?\s+of\s+eval/i, /^assessment\s+scheme/i,
-    /^examination\s+(scheme|pattern)/i, /^evaluation\s+scheme/i,
-    /^activities?\s*(&|and)?\s*exercises?/i, /^references?$/i,
-    /^bibliography/i, /^attendance/i, /^credits?\s*(hours?)?$/i,
-    /^faculty\s+info/i, /^components?$/i, /^quiz\s*\/?s*assignment/i,
-    /^seminar/i, /^written\s+exam/i,
-    /^let'?s\s+(do|think|discuss)/i, /^do\s+this/i, /^activity/i,
-    /^exercise/i, /^questions?$/i, /^textual\s+question/i,
-    /^additional\s+question/i, /^summary$/i, /^glossary$/i,
-    /^further\s+reading/i,
-  ];
-
-  const isAdminSection = (label) =>
-    ADMIN_PATTERNS.some(rx => rx.test((label || '').trim()));
-
-  // Strip course codes like "IFT4528", "CS-101", "ECE 302" from subject names and root labels
-  const stripCourseCode = (str) =>
-    (str || '')
-      .replace(/^[A-Z]{2,6}[-\s]?\d{3,6}\s*/i, '')  // e.g. IFT4528, CS101, ECE-302
-      .replace(/^\d{3,6}[A-Z]{0,4}\s*/i, '')          // e.g. 101CS at start
-      .trim() || str;
-
-  // Clean up trailing punctuation from node labels (commas, colons leftover from PDF parsing)
-  const cleanLabel = (label) =>
-    (label || '').replace(/[,;:]+$/, '').trim();
+Module: ${moduleName}
+Content:
+${contentSlice}`;
 
   try {
-    // 16 000 tokens — enough for full syllabus output with all modules
-    const raw = await generateText(prompt, { temperature: 0.1, numPredict: 16000 });
+    const raw = await generateText(prompt, { temperature: 0.1, numPredict: 1200 });
+
+    // ── Try JSON parse ─────────────────────────────────────────────────────
     const parsed = extractJSON(raw);
 
-    // ── Handle nodes/edges format ──────────────────────────────────────────
-    if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length > 0) {
-      // Filter out admin/noise nodes
-      parsed.nodes = parsed.nodes.filter(n => !isAdminSection(n.label));
-
-      // Enforce label length (≤ 8 words), strip course codes and trailing punctuation
-      parsed.nodes = parsed.nodes.map(n => ({
-        ...n,
-        label: cleanLabel(
-          n.level === 0
-            ? stripCourseCode((n.label || '').split(/\s+/).slice(0, 8).join(' '))
-            : (n.label || '').split(/\s+/).slice(0, 8).join(' ')
-        ),
-      }));
-
-      // Remove edges whose source or target no longer exists
-      const validIds = new Set(parsed.nodes.map(n => n.id));
-      parsed.edges = (parsed.edges || []).filter(
-        e => validIds.has(e.source) && validIds.has(e.target)
-      );
-
-      // Convert flat nodes/edges → nested topics[]
-      const { chapterTitle, topics } = flatNodesToTopicsData(parsed.nodes, parsed.edges);
-
-      // Deduplicate topics by name (keep first occurrence)
-      const dedupedTopics = topics
-        .filter((t, i, arr) => arr.findIndex(x => x.name?.toLowerCase() === t.name?.toLowerCase()) === i)
-        .filter(t => !isAdminSection(t.name));
-
-      console.log(`✅ Ollama extracted ${dedupedTopics.length} modules/topics from ${parsed.nodes.length} nodes`);
-
-      // Guard: if all filtered out, use raw level-1 nodes
-      const finalTopics = dedupedTopics.length > 0
-        ? dedupedTopics
-        : parsed.nodes
-          .filter(n => n.level > 0 && !isAdminSection(n.label))
-          .map(n => ({ name: n.label, description: '', subtopics: [] }));
-
-      return {
-        subject: stripCourseCode(parsed.subject || chapterTitle || ''),
-        summary: parsed.summary || '',
-        topics: finalTopics,
-        relationships: [],
-        keyTerms: parsed.keyTerms || [],
-        // Also expose the raw graph for any callers that want React Flow data directly
-        graphNodes: parsed.nodes,
-        graphEdges: parsed.edges,
-      };
-    }
-
-    // ── Fallback: old nested topics[] format (model didn't follow new schema) ─
     if (parsed && Array.isArray(parsed.topics) && parsed.topics.length > 0) {
-      const normaliseSubtopics = (subs) => {
-        if (!Array.isArray(subs)) return [];
-        return subs.map(s => {
-          if (typeof s === 'string') return { name: s, subtopics: [] };
-          if (typeof s === 'object' && s.name) {
-            return { ...s, subtopics: normaliseSubtopics(s.subtopics || []) };
-          }
-          return null;
-        }).filter(Boolean);
-      };
+      const seen = new Set();
+      const result = [];
 
-      parsed.topics = parsed.topics
-        .map(t => ({ ...t, subtopics: normaliseSubtopics(t.subtopics || []) }))
-        .filter((t, i, arr) => arr.findIndex(x => x.name?.toLowerCase() === t.name?.toLowerCase()) === i)
-        .filter(t => !isAdminSection(t.name));
+      for (const t of parsed.topics) {
+        const topicName = cleanConcept(typeof t === 'string' ? t : (t.name || ''));
+        if (!isValidConcept(topicName)) continue;
+        const k = topicName.toLowerCase().replace(/\s+/g, ' ');
+        if (seen.has(k)) continue;
+        seen.add(k);
 
-      console.log(`✅ Ollama extracted ${parsed.topics.length} topics (legacy nested format)`);
-      return parsed;
+        const subtopics = Array.isArray(t.subtopics)
+          ? t.subtopics
+              .map(s => cleanConcept(typeof s === 'string' ? s : (s.name || s)))
+              .filter(isValidConcept)
+              .filter(s => {
+                const sk = s.toLowerCase().replace(/\s+/g, ' ');
+                if (seen.has(sk)) return false;
+                seen.add(sk);
+                return true;
+              })
+              .map(name => ({ name, subtopics: [] }))
+          : [];
+
+        result.push({ name: topicName, subtopics });
+      }
+
+      console.log(`  JSON OK: ${result.length} topics, ${result.reduce((a,t)=>a+t.subtopics.length,0)} subtopics`);
+      return result;
     }
 
-    throw new Error('Ollama returned neither nodes[] nor topics[] — invalid structure');
+    // ── JSON failed → line-by-line fallback ────────────────────────────────
+    console.warn('  JSON parse failed for', moduleName, '— using line fallback');
+    const seen2 = new Set();
+    return raw
+      .split('\n')
+      .map(l => cleanConcept(l))
+      .filter(isValidConcept)
+      .filter(l => {
+        const k = l.toLowerCase().replace(/\s+/g, ' ');
+        if (seen2.has(k)) return false;
+        seen2.add(k);
+        return true;
+      })
+      .map(name => ({ name, subtopics: [] }));
 
   } catch (err) {
-    // Re-throw so topicController can catch it and properly log/fallback
-    console.error('extractTopicsAdvanced error:', err.message);
-    throw err;
+    console.error('LLM extraction failed for', moduleName, ':', err.message);
+    return [];
   }
 };
+
+/* ─── Fallback: heading outline parser (when no MODULE N markers found) ──── */
+const parseOutlineIntoHierarchy = outline => {
+  const raw = outline.split('\n').map(l => l.trim()).filter(l => l.length > 1);
+  const EXPLICIT_RX = /^(module|unit|chapter|section|part)\s*[-\u2013]?\s*\d+/i;
+  const NUMBERED_RX = /^\d+\.\s+[A-Za-z]/;
+  const ALLCAPS_RX  = /^[A-Z][A-Z\s\-\/&]{3,55}$/;
+  const toTitle = s => s.replace(/\b\w+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  const strip = l => l
+    .replace(/^(module|unit|chapter|section|part|topic|lesson)\s*[-\u2013]?\s*\d+\s*[:\-\u2013]?\s*/i,'')
+    .replace(/^\d+(\.\d+)*\.?\s+/,'').replace(/^[IVXLC]+\.\s+/i,'')
+    .replace(/^[a-zA-Z][.)\s]\s+/,'').replace(/^[\-\*\u2022]\s+/,'')
+    .replace(/[,;:]+$/,'').trim();
+  const isSub = l => {
+    if (isAdminLine(l)) return false;
+    return /^\d+\.\d+/.test(l) ||
+           (/^[a-zA-Z][.)\s]\s+\w/.test(l) && l.length<=100) ||
+           (/^[\-\*\u2022]\s+\w/.test(l) && l.length<=100);
+  };
+  const clean = raw.filter(l => !isAdminLine(l));
+  const expCt = clean.filter(l => EXPLICIT_RX.test(l)).length;
+  const numCt = clean.filter(l => NUMBERED_RX.test(l) && !/^\d+\.\d+/.test(l)).length;
+  const capCt = clean.filter(l => ALLCAPS_RX.test(l)).length;
+  const mode  = expCt>=2?'explicit': numCt>=2?'numbered': (capCt>=2&&capCt<=12)?'allcaps':'flat';
+  console.log('Outline parser mode:', mode, '(exp='+expCt+',num='+numCt+',cap='+capCt+')');
+  const buildName = line => {
+    if (mode==='explicit') {
+      const m = line.match(/^(module|unit|chapter|section|part)\s*[-\u2013]?\s*(\d+)\s*[:\-\u2013]?\s*(.*)/i);
+      if (m) { const kw=m[1].charAt(0).toUpperCase()+m[1].slice(1).toLowerCase(); const inline=m[3]?toTitle(m[3].trim()):''; return inline?(kw+' '+m[2]+': '+inline):(kw+' '+m[2]); }
+    }
+    const s=strip(line)||line; return ALLCAPS_RX.test(s)?toTitle(s):s;
+  };
+  const isModLine = l => {
+    if (isAdminLine(l)) return false;
+    if (mode==='explicit') return EXPLICIT_RX.test(l);
+    if (mode==='numbered') return NUMBERED_RX.test(l)&&!/^\d+\.\d+/.test(l);
+    if (mode==='allcaps')  return ALLCAPS_RX.test(l);
+    return false;
+  };
+  const modules=[]; let cur=null, waitSub=false;
+  for (const line of clean) {
+    if (mode==='flat') {
+      if (!cur) { cur={name:'Topics',description:'',subtopics:[]}; modules.push(cur); }
+      const n=strip(line)||line; if(n.length>=2) cur.subtopics.push({name:n,subtopics:[]}); continue;
+    }
+    if (isModLine(line)) {
+      const name=buildName(line); if(!name||name.length<2) continue;
+      cur={name,description:'',subtopics:[]}; modules.push(cur); waitSub=(mode==='explicit');
+    } else if (waitSub&&ALLCAPS_RX.test(line)) {
+      if(cur&&!cur.name.includes(':')) cur.name+=': '+toTitle(line); waitSub=false;
+    } else if (ALLCAPS_RX.test(line)&&mode!=='allcaps') { waitSub=false; }
+    else {
+      waitSub=false; if(!cur) continue;
+      if(isSub(line)) { const n=strip(line)||line; if(n.length>=2) cur.subtopics.push({name:n,subtopics:[]}); }
+      else if(/^[A-Z]/.test(line)&&!line.endsWith('.')&&line.length>=3&&line.length<=120) { const n=strip(line)||line; if(n.length>=3) cur.subtopics.push({name:n,subtopics:[]}); }
+    }
+  }
+  if (modules.length===0) {
+    const fb={name:'Course Topics',description:'',subtopics:[]};
+    clean.forEach(l=>{ const n=strip(l)||l; if(n.length>=3) fb.subtopics.push({name:n,subtopics:[]}); });
+    if(fb.subtopics.length>0) modules.push(fb);
+  }
+  const seen=new Set();
+  return modules.filter(m=>m.name&&m.name.length>0).map(m=>({
+    ...m, subtopics: m.subtopics.filter(s=>{ const k=(s.name||'').toLowerCase().replace(/\s+/g,' ').trim(); if(!k||seen.has(k)) return false; seen.add(k); return true; })
+  }));
+};
+
+/* ─── extractTopicsAdvanced ──────────────────────────────────────────────────
+ * Pipeline:
+ *   1. JS splits text on MODULE N boundaries (reliable, instant)
+ *   2. Ollama extracts topics per module (small focused calls, accurate)
+ *   3. JS fallback if no MODULE N markers
+ *   4. Ollama gets course title (30-token call)
+ * ──────────────────────────────────────────────────────────────────────────── */
+const extractTopicsAdvanced = async text => {
+  // Step 1: Split into module sections
+  const sections = splitIntoModuleSections(text);
+
+  let topics;
+  if (sections && sections.length >= 2) {
+    console.log('Found', sections.length, 'module sections — using LLM per module');
+    // Step 2: Extract topics with LLM for each module (sequential, accurate)
+    topics = [];
+    for (const sec of sections) {
+      console.log('Extracting topics for:', sec.name, '(' + sec.content.length + ' chars)');
+      const subtopics = await extractModuleTopicsWithLLM(sec.name, sec.content);
+      console.log(' →', subtopics.length, 'topics found');
+      topics.push({ name: sec.name, description: '', subtopics });
+    }
+  } else {
+    // Step 3: Fallback to heading-outline parser
+    console.log('No explicit MODULE sections — using heading outline fallback');
+    const outline = extractHeadingOutline(text);
+    console.log('Outline:', outline.split('\n').length, 'lines');
+    topics = parseOutlineIntoHierarchy(outline);
+  }
+
+  // Step 4: Get course subject name — JS-first, no LLM for this
+  const rawText2000 = text.slice(0, 2000);
+  let subject = extractSubjectNameJS(rawText2000);
+
+  // If JS couldn't find it, try a tiny LLM call as last resort
+  if (!subject || subject.length < 4) {
+    try {
+      const rawHead = text.replace(/\s+/g, ' ').trim().slice(0, 500);
+      const pr = 'What is the official course/subject name? Reply ONLY with the name (2-5 words), nothing else.\n\n' +
+                 rawHead + '\n\nCourse name:';
+      const r = await generateText(pr, { temperature: 0.1, numPredict: 15 });
+      const candidate = (r || '').trim().replace(/[\n"]+/g, '').slice(0, 80);
+      // Reject if the LLM returned an admin phrase
+      if (candidate && candidate.length >= 4 && !isAdminLine(candidate) && !isStop(candidate)) {
+        subject = candidate;
+      }
+    } catch (_) {}
+  }
+
+  // Final fallback: use the first module's subtitle if available
+  if ((!subject || subject.length < 4) && topics.length > 0) {
+    // e.g. "Module 1: Cloud Computing Overview" → "Cloud Computing Overview"
+    const m = (topics[0].name || '').match(/:\s*(.+)$/);
+    if (m && m[1].length >= 4) subject = m[1].trim();
+  }
+
+  if (!subject || subject.length < 2) subject = 'Course';
+
+  console.log('Done: subject="' + subject + '", ' + topics.length + ' modules,',
+    topics.reduce((a,t)=>a+t.subtopics.length,0), 'total topics');
+  return { subject, summary: '', topics, relationships: [], keyTerms: [] };
+};
+
+
+
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    2. QUESTION GENERATION

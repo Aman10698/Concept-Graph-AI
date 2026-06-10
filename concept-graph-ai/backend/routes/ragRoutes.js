@@ -1,8 +1,8 @@
-const express = require('express');
-const router  = express.Router();
+const express     = require('express');
+const router      = express.Router();
 const { storeDocument, listDocuments, deleteDocument, retrieveContext, registerDocument } = require('../services/ragService');
-const { embedText } = require('../services/lanceService');
-const ChatHistory = require('../models/ChatHistory');
+const { embedText }  = require('../services/lanceService');
+const ChatHistory    = require('../models/ChatHistory');
 
 /**
  * POST /api/rag/register
@@ -92,7 +92,10 @@ router.delete('/rag/documents/:id', async (req, res) => {
     const deleted = await deleteDocument(userId, id);
     if (!deleted) return res.status(404).json({ error: 'Document not found or access denied' });
 
-    res.json({ success: true, message: 'RAG document deleted' });
+    // Also wipe the chat history thread for this document
+    await ChatHistory.deleteOne({ userId, documentId: id });
+
+    res.json({ success: true, message: 'RAG document and chat history deleted' });
   } catch (err) {
     console.error('ragRoutes DELETE /documents/:id:', err.message);
     res.status(500).json({ error: err.message });

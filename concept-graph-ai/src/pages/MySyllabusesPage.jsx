@@ -76,13 +76,15 @@ export default function MySyllabusesPage() {
       await deleteSession(sessionId)
       setSessions(prev => prev.filter(s => s.sessionId !== sessionId))
 
-      // ── Purge ALL dep-graph data for this session ──
-      // 1. Per-session scoped key (always)
-      localStorage.removeItem(`topicDepGraphs_${sessionId}`)
+      // ── Purge ALL local data for this session ──
 
-      // 2. Global unscoped key — always wipe it (it has no session tag so
-      //    we can't tell which session it belongs to; safer to always clear it)
+      // 1. Per-session scoped keys (dep graph + mind map)
+      localStorage.removeItem(`topicDepGraphs_${sessionId}`)
+      localStorage.removeItem(`mindMap_${sessionId}`)
+
+      // 2. Global unscoped keys — always wipe (no session tag, safer to clear)
       localStorage.removeItem('topicDepGraphs')
+      localStorage.removeItem('mindMap')
 
       // 3. If this was the active session, wipe all associated learning data
       if (localStorage.getItem('activeSessionId') === sessionId) {
@@ -91,7 +93,7 @@ export default function MySyllabusesPage() {
           .forEach(k => localStorage.removeItem(k))
       }
 
-      // 4. Broadcast so DepGraphPage resets immediately (even if already mounted)
+      // 4. Broadcast so DepGraphPage / other mounted pages reset immediately
       window.dispatchEvent(new CustomEvent('syllabusDeleted', { detail: { sessionId } }))
 
     } catch (e) { setError(e.message) }

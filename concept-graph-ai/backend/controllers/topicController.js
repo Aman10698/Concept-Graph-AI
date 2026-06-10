@@ -25,13 +25,29 @@ const extractTopics = async (req, res) => {
       const geminiResult = await ollamaService.extractTopicsAdvanced(text);
 
       if (geminiResult?.topics?.length > 0) {
+        // Recursively normalize subtopics — preserve full depth, never flatten to strings
+        const normalizeSubtopics = (subs) => {
+          if (!Array.isArray(subs)) return [];
+          return subs
+            .map(s => {
+              if (typeof s === 'string') return { name: s, description: '', subtopics: [] };
+              if (typeof s === 'object' && s !== null) {
+                return {
+                  name: (s.name || '').trim(),
+                  description: s.description || '',
+                  subtopics: normalizeSubtopics(s.subtopics || []),
+                };
+              }
+              return null;
+            })
+            .filter(s => s && s.name.length > 0);
+        };
+
         const topics = geminiResult.topics
           .map(t => ({
-            name:        typeof t === 'string' ? t : (t.name || ''),
+            name: typeof t === 'string' ? t : (t.name || ''),
             description: t.description || '',
-            subtopics:   Array.isArray(t.subtopics)
-              ? t.subtopics.map(s => (typeof s === 'string' ? s : (s.name || s)))
-              : [],
+            subtopics: normalizeSubtopics(t.subtopics || []),
           }))
           .filter(t => t.name.trim().length > 0); // drop any nameless entries
 
@@ -44,15 +60,15 @@ const extractTopics = async (req, res) => {
 
         result = {
           topics,
-          subject:       cleanSubject,
-          summary:       geminiResult.summary       || '',
+          subject: cleanSubject,
+          summary: geminiResult.summary || '',
           relationships: geminiResult.relationships || [],
-          keyTerms:      geminiResult.keyTerms      || [],
-          allKeywords:   topics.map(t => t.name),
-          confidence:    0.96,
-          source:        'gemini',
+          keyTerms: geminiResult.keyTerms || [],
+          allKeywords: topics.map(t => t.name),
+          confidence: 0.96,
+          source: 'gemini',
         };
-        console.log(`✅ Gemini extracted ${topics.length} topics`);
+        console.log(`✅ Gemini extracted ${topics.length} topics with subtopics`);
       }
     } catch (geminiErr) {
       console.warn('⚠️  Gemini unavailable, falling back to rule-based:', geminiErr.message);
@@ -73,13 +89,13 @@ const extractTopics = async (req, res) => {
 
         result = {
           topics,
-          subject:       fallback.subject    || topics[0]?.name || 'Concept Map',
-          summary:       fallback.summary    || '',
+          subject: fallback.subject || topics[0]?.name || 'Concept Map',
+          summary: fallback.summary || '',
           relationships: fallback.relationships || [],
-          keyTerms:      fallback.keyTerms   || [],
-          allKeywords:   (fallback.mainTopics || topics.map(t => t.name)),
-          confidence:    0.6,
-          source:        'rule-based',
+          keyTerms: fallback.keyTerms || [],
+          allKeywords: (fallback.mainTopics || topics.map(t => t.name)),
+          confidence: 0.6,
+          source: 'rule-based',
         };
         console.log(`✅ Rule-based extracted ${topics.length} topics`);
       } catch (fallbackErr) {

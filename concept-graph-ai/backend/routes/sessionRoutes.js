@@ -1,10 +1,11 @@
-const router     = require('express').Router();
-const Session    = require('../models/Session');
-const RagDocument = require('../models/RagDocument');
-const ChatHistory = require('../models/ChatHistory');
+const router        = require('express').Router();
+const Session       = require('../models/Session');
+const RagDocument   = require('../models/RagDocument');
+const ChatHistory   = require('../models/ChatHistory');
+const BloomProgress = require('../models/BloomProgress');
 const { deleteDocument } = require('../services/ragService');
 const { buildDepGraph, buildModuleDepGraph, buildConceptDepGraph } = require('../services/depGraphService');
-const ollamaWorker = require('../services/ollamaWorkerService');
+const ollamaWorker  = require('../services/ollamaWorkerService');
 
 /* ─── helper: compute masteredCount ─────────────────────────── */
 const getMasteredCount = (evaluationData = {}) =>
@@ -219,11 +220,12 @@ router.get('/sessions/:sessionId', async (req, res) => {
         sessionId:      session._id.toString(),
         title:          session.title,
         subject:        session.subject,
+        extractedText:  session.extractedText || '',   // ← needed for question grounding
         topicsData:     session.topicsData,
         questionsData:  session.questionsData,
         dependencyData: session.dependencyData,
         conceptGraph:   session.conceptGraph   || null,
-        mindMap:        session.mindMap        || null,   // ← heading-based mind map
+        mindMap:        session.mindMap        || null,
         conceptMastery: session.conceptMastery || {},
         evaluationData: session.evaluationData || {},
         topicDepGraphs: session.topicDepGraphs || {},
@@ -369,7 +371,13 @@ router.delete('/sessions/:sessionId', async (req, res) => {
       // 3. Delete all RagDocument metadata records for this syllabus
       await RagDocument.deleteMany({ userId, syllabusId });
 
-      console.log(`✅ Session + RAG data deleted: ${sessionId} (${ragDocs.length} RAG docs cleaned)`);
+      // 4. Delete all BloomProgress records tagged to this syllabus
+      const bloomResult = await BloomProgress.deleteMany({ userId, syllabusId });
+
+      console.log(
+        `✅ Session + all associated data deleted: ${sessionId}` +
+        ` (RAG docs: ${ragDocs.length}, BloomProgress: ${bloomResult.deletedCount})`
+      );
     } else {
       console.log(`✅ Session deleted (already absent): ${sessionId}`);
     }
