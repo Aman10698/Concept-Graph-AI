@@ -701,30 +701,32 @@ const generateDocumentQuestions = async (topicObjects, docSnippet, questionsPerT
       const parentTopic = topicObj.parentTopic || null;
       const subject = topicObj.subject || null;
 
-      const contextLine = [
-        subject && `Subject: "${subject}"`,
-        parentTopic && `Parent topic: "${parentTopic}"`,
-        `Topic: "${topicName}"`,
-      ].filter(Boolean).join(' | ');
+      // Build a precise syllabus scope line so the LLM never goes out of context
+      const scopeLine = [
+        subject    && `Course/Subject: "${subject}"`,
+        parentTopic && `Module/Topic: "${parentTopic}"`,
+        `Subtopic: "${topicName}"`,
+      ].filter(Boolean).join(' → ');
 
-      const prompt = `You are a university professor writing exam questions.
-${docCtx ? `Course material:\n"""\n${docCtx}\n"""\n` : ''}
-${contextLine}
+      const prompt = `You are a university professor writing exam questions strictly within the course syllabus.
+${docCtx ? `Syllabus / Course material:\n"""\n${docCtx}\n"""\n` : ''}
+Syllabus scope: ${scopeLine}
 
 Question style: ${questionAngle}.
 
 CRITICAL RULES — follow strictly:
-- Write exactly ${qPerTopic} exam question${qPerTopic > 1 ? 's' : ''} ONLY about "${topicName}"${parentTopic ? ` (part of "${parentTopic}")` : ''}.
-- Do NOT ask about any other topic, subject, or concept.
+- Write exactly ${qPerTopic} exam question${qPerTopic > 1 ? 's' : ''} ONLY about "${topicName}"${parentTopic ? ` as taught under "${parentTopic}"` : ''}${subject ? ` in the course "${subject}"` : ''}.
+- Questions MUST be within the scope of the syllabus above. Do NOT introduce concepts from outside this course.
+- Do NOT ask about any other topic, subject, or unrelated concept.
 - EVERY question MUST explicitly mention or clearly relate to "${topicName}".
 - EVERY question MUST end with a question mark.
 - Output ONLY a numbered list — no introduction, no explanation, no other text.
 ${qPerTopic > 1 ? '- Vary depth: beginner, intermediate, advanced.' : ''}
 
 Format:
-${Array.from({ length: qPerTopic }, (_, i) => `${i + 1}. [Question about "${topicName}"]?`).join('\n')}
+${Array.from({ length: qPerTopic }, (_, i) => `${i + 1}. [Question about "${topicName}" as covered in this course]?`).join('\n')}
 
-Now write the ${qPerTopic} question${qPerTopic > 1 ? 's' : ''} about "${topicName}":`;
+Now write the ${qPerTopic} question${qPerTopic > 1 ? 's' : ''} about "${topicName}" within the syllabus scope above:`;
 
       try {
         const raw = await generateText(prompt, { temperature: 0.65, numPredict: 150 * qPerTopic });

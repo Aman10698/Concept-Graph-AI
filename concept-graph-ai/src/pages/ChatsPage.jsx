@@ -256,36 +256,36 @@ function MarkdownRenderer({ text, isUser }) {
 /* ─── Icons ──────────────────────────────────────────────────────── */
 const SendIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+    <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
   </svg>
 );
 const BotIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-    <line x1="12" y1="15" x2="12" y2="17"/>
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    <line x1="12" y1="15" x2="12" y2="17" />
   </svg>
 );
 const FileIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
   </svg>
 );
 const PlusIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
   </svg>
 );
 const TrashIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-    <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+    <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
   </svg>
 );
 const CopyIcon = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
   </svg>
 );
 
@@ -390,12 +390,12 @@ function MessageBubble({ msg, onCopy }) {
             ? <TypingIndicator />
             : isUser
               ? <p style={{
-                  margin: 0, fontSize: '0.93rem', lineHeight: 1.65,
-                  fontFamily: "'Inter', sans-serif",
-                  whiteSpace: 'pre-wrap',
-                  color: '#3730a3',
-                  fontWeight: 500,
-                }}>{msg.content}</p>
+                margin: 0, fontSize: '0.93rem', lineHeight: 1.65,
+                fontFamily: "'Inter', sans-serif",
+                whiteSpace: 'pre-wrap',
+                color: '#3730a3',
+                fontWeight: 500,
+              }}>{msg.content}</p>
               : <MarkdownRenderer text={msg.content} isUser={false} />
           }
         </div>
@@ -512,22 +512,22 @@ function DocItem({ doc, isActive, onClick, msgCount }) {
 ═══════════════════════════════════════════════════════════════════ */
 export default function ChatsPage() {
   const { user } = useAuth();
-  const userId   = user?.uid || 'anonymous';
+  const userId = user?.uid || 'anonymous';
 
-  const [documents,    setDocuments]   = useState([]);
-  const [activeDoc,    setActiveDoc]   = useState(null);
-  const [messages,     setMessages]    = useState([]);
-  const [input,        setInput]       = useState('');
-  const [streaming,    setStreaming]   = useState(false);
-  const [loadingDocs,  setLoadingDocs] = useState(true);
+  const [documents, setDocuments] = useState([]);
+  const [activeDoc, setActiveDoc] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const [loadingDocs, setLoadingDocs] = useState(true);
   // eslint-disable-next-line no-unused-vars
-  const [loadingHist,  setLoadingHist] = useState(false); // reserved for future skeleton loading UI
+  const [loadingHist, setLoadingHist] = useState(false); // reserved for future skeleton loading UI
   // Track saved message counts per documentId for sidebar badges
-  const [histCounts,   setHistCounts]  = useState({});
+  const [histCounts, setHistCounts] = useState({});
 
   const messagesEndRef = useRef(null);
-  const inputRef       = useRef(null);
-  const abortRef       = useRef(null);
+  const inputRef = useRef(null);
+  const abortRef = useRef(null);
 
   /* ── Scroll to bottom on new messages ── */
   useEffect(() => {
@@ -560,9 +560,9 @@ export default function ChatsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
-          documentId:   doc._id,
+          documentId: doc._id,
           documentName: doc.filename,
-          messages:     msgs.map(m => ({ role: m.role, content: m.content, time: m.time ?? Date.now() })),
+          messages: msgs.map(m => ({ role: m.role, content: m.content, time: m.time ?? Date.now() })),
         }),
       });
       setHistCounts(prev => ({ ...prev, [doc._id]: msgs.length }));
@@ -599,7 +599,7 @@ export default function ChatsPage() {
       }
     } catch (e) { console.error('loadDocs:', e); }
     finally { setLoadingDocs(false); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
@@ -706,7 +706,7 @@ export default function ChatsPage() {
                 return copy;
               });
             }
-          } catch (_) {}
+          } catch (_) { }
         }
       }
     } catch (e) {
@@ -1139,12 +1139,12 @@ export default function ChatsPage() {
               >
                 {streaming
                   ? <div style={{
-                      width: 14, height: 14,
-                      border: '2px solid rgba(156,163,175,0.3)',
-                      borderTopColor: '#9ca3af',
-                      borderRadius: '50%',
-                      animation: 'chatSpin 0.65s linear infinite',
-                    }} />
+                    width: 14, height: 14,
+                    border: '2px solid rgba(156,163,175,0.3)',
+                    borderTopColor: '#9ca3af',
+                    borderRadius: '50%',
+                    animation: 'chatSpin 0.65s linear infinite',
+                  }} />
                   : <SendIcon />
                 }
               </button>

@@ -45,10 +45,16 @@ function extractJSON(text) {
 const generateBloomQuestions = async (concept, bloomLevel, parentTopic = '', n = 3, ragContext = '') => {
   const descriptor = BLOOM_DESCRIPTORS[bloomLevel] || bloomLevel;
   const verbs      = BLOOM_VERBS[bloomLevel]       || '';
-  const context    = parentTopic ? `Subject area: "${parentTopic}".` : '';
+  const context    = parentTopic ? `Subject area / Module: "${parentTopic}".` : '';
   const docSection = ragContext
-    ? `\nUse the following source material as the basis for your questions — base every question on content that appears in this text:\n\"\"\"\n${ragContext}\n\"\"\"\n`
+    ? `\nUse the following syllabus source material as the ONLY basis for your questions — every question must be answerable from this text:\n\"\"\"\n${ragContext}\n\"\"\"\n`
     : '';
+
+  // Syllabus scope breadcrumb shown to the LLM
+  const scopeLine = [
+    parentTopic && `Module/Topic: "${parentTopic}"`,
+    `Subtopic: "${concept}"`,
+  ].filter(Boolean).join(' → ');
 
   // Key words from the concept name used to validate questions are on-topic
   const conceptWords = concept
@@ -58,22 +64,25 @@ const generateBloomQuestions = async (concept, bloomLevel, parentTopic = '', n =
     .filter(w => w.length > 3);
 
   const prompt = `You are a university professor. ${context}${docSection}
-Your task: Write EXACTLY ${n} exam questions about the topic "${concept}".
+Syllabus scope: ${scopeLine}
+
+Your task: Write EXACTLY ${n} exam questions about the subtopic "${concept}"${parentTopic ? ` as it is taught under "${parentTopic}"` : ''}.
 Bloom level: ${bloomLevel} (${descriptor}).
 Bloom verbs to use: ${verbs}.
 
 CRITICAL RULES — follow strictly:
-- EVERY question MUST be specifically about "${concept}". Do NOT ask about any other topic.
+- EVERY question MUST be specifically about "${concept}" within the scope of "${parentTopic || 'this course'}". Do NOT ask about topics outside this module.
+- Questions MUST NOT introduce concepts that are not part of this course/module.
 - EVERY question MUST end with a question mark.
 - Output ONLY a numbered list — no introduction, no explanation, no headers.
 - Do NOT write anything before or after the numbered list.
 
 Correct format:
-1. Question one about "${concept}"?
-2. Question two about "${concept}"?
-3. Question three about "${concept}"?
+1. Question one about "${concept}" within "${parentTopic || 'this course'}"?
+2. Question two about "${concept}" within "${parentTopic || 'this course'}"?
+3. Question three about "${concept}" within "${parentTopic || 'this course'}"?
 
-Now write exactly ${n} questions about "${concept}" at the ${bloomLevel} Bloom level:`;
+Now write exactly ${n} questions about "${concept}" at the ${bloomLevel} Bloom level, staying within the syllabus scope above:`;
 
   try {
     const raw = await generateText(prompt, { temperature: 0.4, numPredict: 800 });
@@ -147,19 +156,27 @@ Now write exactly ${n} questions about "${concept}" at the ${bloomLevel} Bloom l
 ═══════════════════════════════════════════════════════════════════════ */
 const generateMCQQuestions = async (concept, bloomLevel, parentTopic = '', n = 3, ragContext = '') => {
   const descriptor = BLOOM_DESCRIPTORS[bloomLevel] || bloomLevel;
-  const context    = parentTopic ? `Subject area: "${parentTopic}".` : '';
+  const context    = parentTopic ? `Subject area / Module: "${parentTopic}".` : '';
   const docSection = ragContext
-    ? `\nUse the following source material as the basis for your questions:\n\"\"\"\n${ragContext}\n\"\"\"\n`
+    ? `\nUse the following syllabus source material as the ONLY basis for your questions:\n\"\"\"\n${ragContext}\n\"\"\"\n`
     : '';
+
+  // Syllabus scope breadcrumb
+  const scopeLine = [
+    parentTopic && `Module/Topic: "${parentTopic}"`,
+    `Subtopic: "${concept}"`,
+  ].filter(Boolean).join(' → ');
 
   // Use a simple line-based format — far more reliable than JSON from Ollama
   const prompt = `You are a university professor. ${context}${docSection}
-Write EXACTLY ${n} multiple-choice questions about the topic "${concept}" at Bloom's level: ${bloomLevel} (${descriptor}).
+Syllabus scope: ${scopeLine}
 
-CRITICAL: Every question MUST be specifically about "${concept}". Do NOT ask about any other topic.
+Write EXACTLY ${n} multiple-choice questions about the subtopic "${concept}"${parentTopic ? ` as taught under "${parentTopic}"` : ''} at Bloom's level: ${bloomLevel} (${descriptor}).
+
+CRITICAL: Every question MUST be specifically about "${concept}" within the module "${parentTopic || 'this course'}". Do NOT ask about topics outside this scope.
 
 Use this EXACT format for every question (copy the labels exactly):
-Q: [question text about "${concept}"]
+Q: [question text about "${concept}" within "${parentTopic || 'this course'}"]
 A: [option A]
 B: [option B]
 C: [option C]
@@ -171,6 +188,7 @@ Rules:
 - All 4 options must be plausible.
 - Only one option is correct.
 - Each question targets the ${bloomLevel} cognitive level.
+- Questions must be within the syllabus scope shown above.
 - No markdown, no numbering, no extra text.
 
 Write ${n} questions about "${concept}" now:`;

@@ -129,27 +129,53 @@ function UploadZone({ onUploaded, disabled, userId }) {
       setUploading(false);
       setTimeout(() => setPhase('idle'), 3500);
 
-      // Step 3: Background indexing — embed chunks into LanceDB (slow, fire-and-forget)
-      const extractedText = uploadResult.extraction?.extractedText || '';
-      if (extractedText.trim().length > 20) {
-        fetch(`${API}/api/rag/index`, {
+      // Step 3: Background indexing — fire-and-forget
+      // For PDFs: send raw file to /api/rag/index-multimodal → backend does per-page extraction
+      //           → proper page numbers in RagRawDocument and LanceDB chunks
+      // For TXT/images: fall back to /api/rag/index with pre-extracted text
+      const isPdf = file.type === 'application/pdf';
+      if (isPdf) {
+        const pdfForm = new FormData();
+        pdfForm.append('file', file);
+        pdfForm.append('userId', userId);
+        pdfForm.append('enableVision', 'false');
+        fetch(`${API}/api/rag/index-multimodal`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId,
-            filename: uploadResult.file.originalName,
-            mimetype: uploadResult.file.mimetype,
-            extractedText,
-          }),
+          body: pdfForm,
         })
           .then(r => r.json())
           .then(ragJson => {
             if (ragJson.success) {
-              console.log(`✅ RAG indexed: ${ragJson.rag?.chunkCount} chunks`);
+              console.log(`✅ RAG multimodal indexed: ${ragJson.rag?.chunkCount} chunks, ${ragJson.rag?.pages} pages`);
+            } else {
+              console.warn('RAG multimodal indexing issue:', ragJson.error);
             }
           })
-          .catch(err => console.warn('RAG background indexing failed:', err.message));
+          .catch(err => console.warn('RAG multimodal indexing failed:', err.message));
+      } else {
+        // TXT / image — use pre-extracted text from upload response
+        const extractedText = uploadResult.extraction?.extractedText || '';
+        if (extractedText.trim().length > 20) {
+          fetch(`${API}/api/rag/index`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId,
+              filename: uploadResult.file.originalName,
+              mimetype: uploadResult.file.mimetype,
+              extractedText,
+            }),
+          })
+            .then(r => r.json())
+            .then(ragJson => {
+              if (ragJson.success) {
+                console.log(`✅ RAG indexed: ${ragJson.rag?.chunkCount} chunks`);
+              }
+            })
+            .catch(err => console.warn('RAG background indexing failed:', err.message));
+        }
       }
+
 
     } catch (err) {
       setError(err.message || 'Upload failed');
