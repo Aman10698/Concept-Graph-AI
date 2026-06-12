@@ -73,6 +73,7 @@ Bloom verbs to use: ${verbs}.
 CRITICAL RULES — follow strictly:
 - EVERY question MUST be specifically about "${concept}" within the scope of "${parentTopic || 'this course'}". Do NOT ask about topics outside this module.
 - Questions MUST NOT introduce concepts that are not part of this course/module.
+- EVERY question MUST be highly distinct. Cover completely different aspects, applications, or examples of the concept. Do NOT write variations of the same question.
 - EVERY question MUST end with a question mark.
 - Output ONLY a numbered list — no introduction, no explanation, no headers.
 - Do NOT write anything before or after the numbered list.
@@ -85,7 +86,7 @@ Correct format:
 Now write exactly ${n} questions about "${concept}" at the ${bloomLevel} Bloom level, staying within the syllabus scope above:`;
 
   try {
-    const raw = await generateText(prompt, { temperature: 0.4, numPredict: 800 });
+    const raw = await generateText(prompt, { temperature: 0.75, numPredict: 800 });
     console.log(`[bloomService] Raw Ollama output for ${bloomLevel}:\n${raw.slice(0, 400)}`);
 
     const questions = [];
@@ -174,6 +175,7 @@ Syllabus scope: ${scopeLine}
 Write EXACTLY ${n} multiple-choice questions about the subtopic "${concept}"${parentTopic ? ` as taught under "${parentTopic}"` : ''} at Bloom's level: ${bloomLevel} (${descriptor}).
 
 CRITICAL: Every question MUST be specifically about "${concept}" within the module "${parentTopic || 'this course'}". Do NOT ask about topics outside this scope.
+CRITICAL: Every question MUST be completely distinct. Test completely different aspects, sub-features, or scenarios of the concept. Do NOT write repetitive questions.
 
 Use this EXACT format for every question (copy the labels exactly):
 Q: [question text about "${concept}" within "${parentTopic || 'this course'}"]
@@ -194,7 +196,7 @@ Rules:
 Write ${n} questions about "${concept}" now:`;
 
   try {
-    const raw = await generateText(prompt, { temperature: 0.5, numPredict: 1400 });
+    const raw = await generateText(prompt, { temperature: 0.75, numPredict: 1400 });
     console.log(`[bloomService] MCQ raw:\n${raw.slice(0, 600)}`);
 
     const mcqs = [];

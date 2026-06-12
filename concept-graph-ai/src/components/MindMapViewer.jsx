@@ -7,6 +7,7 @@ import QuizMindMap from './QuizMindMap';
  */
 const MindMapViewer = ({ topics = [], subject = '', evaluationData = {}, onTopicClick, revision = 0 }) => {
   const [ready, setReady] = useState(false);
+  const [filterText, setFilterText] = useState('');
 
   // Small delay so the parent container has painted before QuizMindMap measures its width
   useEffect(() => {
@@ -14,8 +15,22 @@ const MindMapViewer = ({ topics = [], subject = '', evaluationData = {}, onTopic
     return () => clearTimeout(id);
   }, []);
 
-  const nodeCount     = topics.length;
-  const subtopicCount = topics.reduce((acc, t) => acc + (t.subtopics?.length ?? 0), 0);
+  const filteredTopics = topics.filter(t => {
+    if (!filterText) return true;
+    const search = filterText.toLowerCase();
+    const name = typeof t === 'string' ? t : (t?.name || '');
+    if (name.toLowerCase().includes(search)) return true;
+    
+    // Check if any subtopic matches
+    const subtopics = typeof t === 'object' && Array.isArray(t.subtopics) ? t.subtopics : [];
+    return subtopics.some(s => {
+      const subName = typeof s === 'string' ? s : (s?.name || '');
+      return subName.toLowerCase().includes(search);
+    });
+  });
+
+  const nodeCount     = filteredTopics.length;
+  const subtopicCount = filteredTopics.reduce((acc, t) => acc + (t.subtopics?.length ?? 0), 0);
 
   if (!topics || topics.length === 0) {
     return (
@@ -28,9 +43,26 @@ const MindMapViewer = ({ topics = [], subject = '', evaluationData = {}, onTopic
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-      {/* ── Quick stats strip ── */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      
+      {/* ── Search and Quick stats strip ── */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input 
+          type="text" 
+          placeholder="Filter by topic or chapter..." 
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+          style={{
+            padding: '8px 14px', borderRadius: 8,
+            border: '1.5px solid rgba(99,102,241,0.2)',
+            fontSize: '0.85rem', width: '250px',
+            outline: 'none',
+            fontFamily: 'inherit',
+            transition: 'all 0.2s',
+            background: 'rgba(255,255,255,0.8)'
+          }}
+          onFocus={(e) => e.target.style.borderColor = '#6366f1'}
+          onBlur={(e) => e.target.style.borderColor = 'rgba(99,102,241,0.2)'}
+        />
         {[
           { label: 'Topics',    value: nodeCount,     color: '#6366f1' },
           { label: 'Subtopics', value: subtopicCount, color: '#22c55e' },
@@ -57,7 +89,7 @@ const MindMapViewer = ({ topics = [], subject = '', evaluationData = {}, onTopic
       {/* ── Canvas mind map ── */}
       {ready && (
         <QuizMindMap
-          topics={topics}
+          topics={filteredTopics}
           evalData={evaluationData}
           courseTitle={subject || 'Concept Map'}
           revision={revision}

@@ -34,6 +34,7 @@ export default function PracticePage() {
   const [generatingFor,  setGeneratingFor]  = useState(null)
   const [sessionText,    setSessionText]    = useState('')
   const [sessionTitle,   setSessionTitle]   = useState('My Course')
+  const [filterText,     setFilterText]     = useState('')
   // Incremented on every eval update so QuizMindMap always gets a fresh key
   const mapRevRef = useRef(0)
   const [mapRevision, setMapRevision] = useState(0)
@@ -132,6 +133,20 @@ export default function PracticePage() {
       if (sName) parentMap[sName] = pName
     })
   })
+
+  /* ── Filter topics ── */
+  const filteredTopics = topics.filter(t => {
+    if (!filterText) return true;
+    const search = filterText.toLowerCase();
+    const name = typeof t === 'string' ? t : (t?.name || '');
+    if (name.toLowerCase().includes(search)) return true;
+    
+    const subtopics = typeof t === 'object' && Array.isArray(t.subtopics) ? t.subtopics : [];
+    return subtopics.some(s => {
+      const subName = typeof s === 'string' ? s : (s?.name || '');
+      return subName.toLowerCase().includes(search);
+    });
+  });
 
   /* ── subject from session title (best context hint for Ollama) ── */
   const subject = sessionTitle || null
@@ -431,9 +446,28 @@ export default function PracticePage() {
             </div>
           ) : (
             <div className="t-card" style={{ padding: '18px', background: 'linear-gradient(135deg,#f8faff 0%,#f0f4ff 100%)' }}>
+              <div style={{ marginBottom: 14 }}>
+                <input 
+                  type="text" 
+                  placeholder="Filter by topic or chapter..." 
+                  value={filterText}
+                  onChange={(e) => setFilterText(e.target.value)}
+                  style={{
+                    padding: '8px 14px', borderRadius: 8,
+                    border: '1.5px solid rgba(99,102,241,0.2)',
+                    fontSize: '0.85rem', width: '250px',
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    transition: 'all 0.2s',
+                    background: 'rgba(255,255,255,0.8)'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = '#6366f1'}
+                  onBlur={(e) => e.target.style.borderColor = 'rgba(99,102,241,0.2)'}
+                />
+              </div>
               <QuizMindMap
                 revision={mapRevision}
-                topics={topics}
+                topics={filteredTopics}
                 evalData={evalData}
                 courseTitle={sessionTitle}
                 onSelectTopic={setSelectedTopic}

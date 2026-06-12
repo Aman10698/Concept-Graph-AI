@@ -306,7 +306,7 @@ router.post('/rag/analyze', async (req, res) => {
 ═══════════════════════════════════════════════════════════════════ */
 router.post('/rag/chat', async (req, res) => {
   try {
-    const { userId, documentId, messages = [] } = req.body;
+    const { userId, documentId, messages = [], level = 'medium' } = req.body;
     if (!userId)          return res.status(400).json({ error: 'userId required' });
     if (!messages.length) return res.status(400).json({ error: 'messages empty' });
 
@@ -343,6 +343,7 @@ router.post('/rag/chat', async (req, res) => {
 
 The following items were extracted from their notes using a deterministic parser. Present them clearly and educationally.
 DO NOT omit any item. DO NOT add items not listed below. Cite page numbers where shown.
+The user is a ${level} level learner. Adjust your tone, language, and the depth of explanation to be appropriate for a ${level} level audience.
 
 EXTRACTED ITEMS:
 ${markdown.slice(0, 25000)}`;
@@ -376,7 +377,11 @@ ${markdown.slice(0, 25000)}`;
     /* ── BRANCH B: KNOWLEDGE — hybrid vector search ────────────── */
     console.log(`\n🔍 [Chat] RAG mode | "${query.slice(0, 60)}"`);
 
-    const context = await retrieveContext(userId, null, query, 15, documentId || null);
+    // Combine the last two user messages to give the vector search context for follow-up questions
+    const userMsgs = messages.filter(m => m.role === 'user');
+    const retrievalQuery = userMsgs.slice(-2).map(m => m.content).join(' ');
+
+    const context = await retrieveContext(userId, null, retrievalQuery, 15, documentId || null);
     console.log(`   Context: ${context.length} chars`);
 
     const systemPrompt = context
@@ -387,6 +392,7 @@ Rules:
 3. Cite page numbers when shown as [Page N].
 4. Format with Markdown: **bold** key terms, bullet lists, ## headings.
 5. Be educational and concise.
+6. The user is a ${level} level learner. Adjust your tone, language, and the depth of explanation to be appropriate for a ${level} level audience.
 
 STUDENT'S NOTES:
 ${context}`

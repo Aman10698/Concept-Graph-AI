@@ -113,40 +113,71 @@ function buildLayout(topics, evalData, courseTitle) {
   const cols = buildColumns(topics, evalData)
   const { w: ROOT_W, h: ROOT_H } = measureRootNode(courseTitle || '')
 
-  const colW   = Math.max(SUB_W, TOPIC_W) + COL_GAP
-  const totalW = cols.length > 0 ? cols.length * colW - COL_GAP + PAD * 2 : ROOT_W + PAD * 2
-  const rootX  = totalW / 2 - ROOT_W / 2
-  const rootY  = PAD
-  const nodes  = []
+  let totalW = 0
+  let maxH = 0
+  
+  // Calculate the width and grid structure of each column
+  // If there are 1 or 2 topics (e.g. filtered), use a tree/grid layout to avoid straight lines
+  const useTree = cols.length <= 2
+  const colLayouts = cols.map((col, ci) => {
+    let subCols = 1
+    if (useTree && col.descendants.length > 1) {
+      subCols = Math.min(5, Math.ceil(Math.sqrt(col.descendants.length)))
+    }
+    const subColW = SUB_W + COL_GAP
+    const width = Math.max(TOPIC_W, subCols * subColW - COL_GAP)
+    const rows = Math.ceil(col.descendants.length / subCols)
+    return { col, subCols, width, rows }
+  })
+
+  // Calculate total width
+  const totalColsW = colLayouts.reduce((sum, cl) => sum + cl.width, 0) + Math.max(0, cols.length - 1) * COL_GAP
+  totalW = Math.max(ROOT_W + PAD * 2, totalColsW + PAD * 2)
+
+  const rootX = totalW / 2 - ROOT_W / 2
+  const rootY = PAD
+  const nodes = []
 
   nodes.push({ id: '__root__', kind: 'root', x: rootX, y: rootY, w: ROOT_W, h: ROOT_H })
 
   const topicY = rootY + ROOT_H + H_GAP1
-  cols.forEach((col, ci) => {
-    const cx = PAD + ci * colW + (colW - COL_GAP) / 2
+  
+  let currentX = PAD + (totalW - PAD * 2 - totalColsW) / 2 // Center the columns
+  maxH = topicY
+
+  colLayouts.forEach(({ col, subCols, width, rows }, ci) => {
+    const cx = currentX + width / 2
     nodes.push({
       id: `t${ci}`, kind: 'topic', name: col.name,
       x: cx - TOPIC_W / 2, y: topicY, w: TOPIC_W, h: TOPIC_H,
       rating: col.rating, parent: '__root__',
     })
 
-    // Each topic fans directly from its module node (not chained to sibling)
     const subY0 = topicY + TOPIC_H + H_GAP2
+    const subColW = SUB_W + COL_GAP
+    const actualSubW = subCols * subColW - COL_GAP
+    const startX = cx - actualSubW / 2 + SUB_W / 2
+
     col.descendants.forEach((dName, si) => {
+      const cIdx = si % subCols
+      const rIdx = Math.floor(si / subCols)
       nodes.push({
         id: `s${ci}_${si}`, kind: 'subtopic', name: dName,
-        x: cx - SUB_W / 2,
-        y: subY0 + si * (SUB_H + V_GAP),
+        x: startX + cIdx * subColW - SUB_W / 2,
+        y: subY0 + rIdx * (SUB_H + V_GAP),
         w: SUB_W, h: SUB_H,
         rating: evalData?.[dName]?.rating,
-        parent: `t${ci}`,    // ← ALL topics fan from the module, not chained
+        parent: `t${ci}`,
         topicId: `t${ci}`,
       })
     })
+    
+    currentX += width + COL_GAP
+    const colMaxH = subY0 + rows * (SUB_H + V_GAP)
+    if (colMaxH > maxH) maxH = colMaxH
   })
 
-  const maxDesc = cols.length > 0 ? Math.max(...cols.map(c => c.descendants.length), 0) : 0
-  const totalH  = topicY + (cols.length > 0 ? TOPIC_H + H_GAP2 + maxDesc * (SUB_H + V_GAP) : 0) + PAD
+  const totalH = maxH + PAD
   return { nodes, totalW, totalH }
 }
 

@@ -524,6 +524,7 @@ export default function ChatsPage() {
   const [loadingHist, setLoadingHist] = useState(false); // reserved for future skeleton loading UI
   // Track saved message counts per documentId for sidebar badges
   const [histCounts, setHistCounts] = useState({});
+  const [level, setLevel] = useState('medium');
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -646,6 +647,7 @@ export default function ChatsPage() {
           userId,
           documentId: activeDoc?._id || null,
           messages: updatedHistory.map(m => ({ role: m.role, content: m.content })),
+          level,
         }),
       });
 
@@ -1086,6 +1088,27 @@ export default function ChatsPage() {
                 ← Select a note from the sidebar to enable chat
               </p>
             )}
+            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 8, paddingLeft: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>Explanation Level:</span>
+                <select 
+                  value={level}
+                  onChange={(e) => setLevel(e.target.value)}
+                  disabled={streaming || !activeDoc}
+                  style={{
+                    padding: '4px 8px', borderRadius: 6,
+                    border: '1px solid #cbd5e1',
+                    fontSize: '0.75rem', fontFamily: "'Inter', sans-serif",
+                    color: '#475569', background: '#f8fafc',
+                    outline: 'none', cursor: (!activeDoc || streaming) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <option value="beginner">Beginner</option>
+                  <option value="medium">Medium</option>
+                  <option value="advanced">Advanced</option>
+                </select>
+              </div>
+            </div>
             <div style={{
               display: 'flex', gap: 10, alignItems: 'flex-end',
               background: '#f8faff',

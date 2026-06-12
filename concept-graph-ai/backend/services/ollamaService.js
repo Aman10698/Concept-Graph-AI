@@ -682,7 +682,10 @@ const generateDocumentQuestions = async (topicObjects, docSnippet, questionsPerT
     'problem-solving and design',
     'evaluation and critique',
   ];
-  const questionAngle = ANGLES[Math.floor(seed / 1000) % ANGLES.length];
+  // Instead of picking one angle, we ask for a mix if generating multiple questions.
+  const angleHint = qPerTopic === 1 
+    ? `Question style: ${ANGLES[Math.floor(seed / 1000) % ANGLES.length]}.`
+    : `Question styles: Mix different angles such as definition, application, analysis, and evaluation.`;
 
   console.log(`✨ Ollama: generating ${qPerTopic} questions per topic for ${topics.length} topics...`);
 
@@ -712,7 +715,7 @@ const generateDocumentQuestions = async (topicObjects, docSnippet, questionsPerT
 ${docCtx ? `Syllabus / Course material:\n"""\n${docCtx}\n"""\n` : ''}
 Syllabus scope: ${scopeLine}
 
-Question style: ${questionAngle}.
+${angleHint}
 
 CRITICAL RULES — follow strictly:
 - Write exactly ${qPerTopic} exam question${qPerTopic > 1 ? 's' : ''} ONLY about "${topicName}"${parentTopic ? ` as taught under "${parentTopic}"` : ''}${subject ? ` in the course "${subject}"` : ''}.
@@ -721,7 +724,7 @@ CRITICAL RULES — follow strictly:
 - EVERY question MUST explicitly mention or clearly relate to "${topicName}".
 - EVERY question MUST end with a question mark.
 - Output ONLY a numbered list — no introduction, no explanation, no other text.
-${qPerTopic > 1 ? '- Vary depth: beginner, intermediate, advanced.' : ''}
+${qPerTopic > 1 ? '- HIGH VARIANCE REQUIRED: Each question MUST have a distinct meaning and test a completely different aspect of the topic. Avoid generating questions that are rephrasings of each other.\n- Vary depth: beginner, intermediate, advanced.' : ''}
 
 Format:
 ${Array.from({ length: qPerTopic }, (_, i) => `${i + 1}. [Question about "${topicName}" as covered in this course]?`).join('\n')}
@@ -729,7 +732,7 @@ ${Array.from({ length: qPerTopic }, (_, i) => `${i + 1}. [Question about "${topi
 Now write the ${qPerTopic} question${qPerTopic > 1 ? 's' : ''} about "${topicName}" within the syllabus scope above:`;
 
       try {
-        const raw = await generateText(prompt, { temperature: 0.65, numPredict: 150 * qPerTopic });
+        const raw = await generateText(prompt, { temperature: 0.75, numPredict: 150 * qPerTopic });
         const qs = parseQuestions(raw, topicName, qPerTopic, parentTopic);
         console.log(`  ${qs.length > 0 ? '✅' : '⚠️ '} ${topicName}: ${qs.length} questions`);
         return qs;
@@ -912,59 +915,61 @@ Return ONLY valid JSON (no markdown, no explanation outside JSON):
 const analyzeDependencies = async (topics, docSnippet = '', subject = '') => {
   const topicNames = topics.map(t => (typeof t === 'string' ? t : t.name)).filter(Boolean);
   const subjectName = subject || topicNames[0] || 'Course';
-  const singleMode = topicNames.length === 1 && topicNames[0] === subjectName;
+  // Use singleMode if there are only 1 or 2 topics, implying the user wants a focused graph for specific concepts
+  const singleMode = topicNames.length <= 2;
 
   // ── IMPORTANT: Ollama must NOT return x/y coordinates.
   // React Flow + Dagre compute layout automatically from the graph topology.
 
-  const singleTopicPrompt = `You are an expert curriculum designer.
+  const singleTopicPrompt = `You are an expert curriculum designer and educational diagnostician.
 
-A student is struggling with: "${subjectName}"
+A student is preparing to learn or struggling with the following topic(s): ${topicNames.join(', ')}
+(Context/Course: "${subjectName}")
 
-Generate a hierarchical prerequisite dependency graph showing what they need to learn BEFORE mastering this topic.
+Step 1: Analyze the core topic(s) and determine the exact FOUNDATIONAL prerequisite concepts, prior knowledge, and skills required to understand them.
+Step 2: Generate a hierarchical dependency graph showing these foundational topics that the student is likely lacking and MUST work upon BEFORE tackling the core topic(s).
 
 Rules:
-1. Create exactly ONE root node (type "root") for "${subjectName}"
-2. Create 3-5 category nodes (type "category") as prerequisite topic areas
-3. Create 2-4 concept nodes (type "concept") under each category
+1. Create exactly ONE root node (type "root") for "${topicNames[0]}".
+2. Create 2-4 category nodes (type "category") representing broad prerequisite areas needed for this topic.
+3. Create 2-4 concept nodes (type "concept") under each category representing the SPECIFIC foundational skills the student needs to learn first. DO NOT just repeat the target topic.
 4. Each node MUST have:
    - id: unique string, no spaces (use hyphens)
-   - name: clear human-readable name
+   - name: clear human-readable name of the prerequisite concept
    - type: "root" | "category" | "concept"
    - status: "weak" if score<45, "partial" if 45-74, "strong" if >=75, "not_started" if no score
    - score: integer 0-100 (estimated student mastery) or null for root
-   - description: one concise sentence explaining this concept or gap
+   - description: one concise sentence explaining why this prerequisite is important
 5. Edges:
    - type "hierarchy" for parent → child (structural)
    - type "prerequisite" for cross-dependencies (concept B truly requires concept A first)
-6. recommendedPath: ordered list of concept names, foundational first
+6. recommendedPath: ordered list of concept names, foundational first, ending with the root topic
 7. DO NOT include x, y, position, or coordinate fields
 8. Return ONLY valid JSON — no markdown, no explanation
 
 {
   "nodes": [
-    { "id": "root", "name": "${subjectName}", "type": "root", "status": "not_started", "score": null, "description": "The main topic to master." },
-    { "id": "cat-foundations", "name": "Foundations", "type": "category", "status": "weak", "score": 35, "description": "Core prerequisite concepts." },
-    { "id": "concept-basics", "name": "Basic Concept A", "type": "concept", "status": "weak", "score": 30, "description": "Must understand before advancing." }
+    { "id": "root", "name": "${topicNames[0]}", "type": "root", "status": "not_started", "score": null, "description": "The main topic to master." }
   ],
-  "edges": [
-    { "source": "root", "target": "cat-foundations", "type": "hierarchy" },
-    { "source": "cat-foundations", "target": "concept-basics", "type": "hierarchy" }
-  ],
-  "recommendedPath": ["Basic Concept A", "Foundations", "${subjectName}"]
+  "edges": [],
+  "recommendedPath": []
 }`;
 
-  const fullCoursePrompt = `You are an expert curriculum designer.
+  const fullCoursePrompt = `You are an expert curriculum designer and educational diagnostician.
 
 Course: "${subjectName}"
 Topics covered: ${topicNames.join(', ')}
 
-Generate a hierarchical educational dependency graph for this course.
+Step 1: Analyze the provided topics and identify the underlying logical progression.
+Step 2: Identify any unlisted FOUNDATIONAL prerequisite concepts that a student might be lacking and MUST understand before learning these topics.
+Step 3: Generate a hierarchical educational dependency graph incorporating both the provided topics and the necessary foundational prerequisites.
 
 Rules:
 1. Create exactly ONE root node (type "root") for "${subjectName}"
-2. Create 3-5 category nodes (type "category") as major topic areas from the list above
-3. Create 2-4 concept nodes (type "concept") under each category — use the actual topic names
+2. Create 3-5 category nodes (type "category") representing major phases of learning
+3. Create concept nodes (type "concept") under each category. 
+   - You MUST include the main provided topics.
+   - You MUST ALSO invent and include prerequisite nodes that represent foundational skills the student needs to learn first. DO NOT just copy-paste the provided topics.
 4. Each node MUST have:
    - id: unique string, no spaces (use hyphens)
    - name: clear human-readable name
