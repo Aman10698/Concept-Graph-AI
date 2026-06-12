@@ -17,7 +17,6 @@ import AboutPage from './pages/AboutPage';
 import RagStudyPage from './pages/RagStudyPage';
 import ChatsPage from './pages/ChatsPage';
 import DepGraphPage from './pages/DepGraphPage';
-import ConceptGraphPage from './pages/ConceptGraphPage';
 
 /**
  * AppRoutes — clean routing that uses AppLayout for all authenticated pages
@@ -132,15 +131,6 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <AppLayout><DepGraphPage /></AppLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/learn"
-        element={
-          <ProtectedRoute>
-            <AppLayout><ConceptGraphPage /></AppLayout>
           </ProtectedRoute>
         }
       />

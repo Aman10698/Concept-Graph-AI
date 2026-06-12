@@ -149,6 +149,34 @@ export default function BloomPanel({ concept, parentTopic, subtopics = [], onClo
     finally { setLoading(false); }
   };
 
+  /* ── handle inline completion (skip dep graph) ── */
+  const handleInlineCompletion = (currentResults, currentMcqPicked) => {
+    const quizResults = questions.map((q, i) => {
+      if (q.type === 'mcq') {
+        const picked = currentMcqPicked[i];
+        return { correct: picked === q.correct };
+      } else {
+        const r = currentResults[i];
+        return { score: r ? r.total : 0 };
+      }
+    });
+    const finalScore = quizResults.length
+      ? Math.round(quizResults.reduce((s, r) => s + (r.correct !== undefined ? (r.correct ? 100 : 0) : (r.score || 0)), 0) / quizResults.length)
+      : 0;
+    
+    setDepIssues({ score: finalScore, nodes: [] });
+    
+    if (onQuizComplete) {
+      onQuizComplete({
+        concept,
+        score: finalScore,
+        rating: scoreToRating(finalScore),
+        nodes: [],
+        improvements: []
+      });
+    }
+  };
+
   /* ── evaluate one answer ── */
   const evaluate = async (idx) => {
     const q = questions[idx];
@@ -178,7 +206,11 @@ export default function BloomPanel({ concept, parentTopic, subtopics = [], onClo
           const next = { ...p, [idx]: j.result };
           const total = questions.length;
           if (Object.keys(next).length >= total && total > 0) {
-            loadDepGraph(activeLevel, questions, next, mcqPicked);
+            if (inline) {
+              handleInlineCompletion(next, mcqPicked);
+            } else {
+              loadDepGraph(activeLevel, questions, next, mcqPicked);
+            }
           }
           return next;
         });
@@ -450,7 +482,11 @@ export default function BloomPanel({ concept, parentTopic, subtopics = [], onClo
                                 setMcqPicked(p => {
                                   const next = { ...p, [idx]: key };
                                   if (Object.keys(next).length >= questions.length && questions.length > 0) {
-                                    loadDepGraph(activeLevel, questions, results, next);
+                                    if (inline) {
+                                      handleInlineCompletion(results, next);
+                                    } else {
+                                      loadDepGraph(activeLevel, questions, results, next);
+                                    }
                                   }
                                   return next;
                                 });
@@ -534,35 +570,52 @@ export default function BloomPanel({ concept, parentTopic, subtopics = [], onClo
             </div>
           )}
 
-          {/* ── DEPENDENCY ANALYSIS result ── */}
+          {/* ── FINAL RESULT ── */}
           {tab === 'quiz' && !depLoading && depIssues !== undefined && (
             <div style={{ marginTop:24, borderTop:'1.5px solid #e2e8f0', paddingTop:20 }}>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
-                marginBottom:16, flexWrap:'wrap', gap:8 }}>
-                <div>
-                  <p style={{ fontWeight:700, fontSize:'0.88rem', color:'#1e293b', margin:'0 0 2px' }}>
-                    Dependency Graph
-                  </p>
-                  <p style={{ fontSize:'0.74rem', color:'#6b7280', margin:0 }}>
-                    AI-generated based on your quiz performance
-                  </p>
+              {inline ? (
+                <div style={{ textAlign: 'center', padding: '16px 0 8px' }}>
+                  <p style={{ fontWeight: 800, fontSize: '1.2rem', color: '#1e293b', marginBottom: 12 }}>Quiz Complete!</p>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 24px', borderRadius: 12,
+                    background: depIssues.score >= 70 ? '#f0fdf4' : depIssues.score >= 40 ? '#fffbeb' : '#fef2f2',
+                    border: `1.5px solid ${depIssues.score >= 70 ? '#22c55e' : depIssues.score >= 40 ? '#f59e0b' : '#ef4444'}` }}>
+                    <span style={{ fontSize: '0.85rem', color: '#6b7280', fontWeight: 600 }}>Final Score:</span>
+                    <span style={{ fontWeight: 800, fontSize: '1.2rem', color: depIssues.score >= 70 ? '#16a34a' : depIssues.score >= 40 ? '#b45309' : '#dc2626' }}>
+                      {depIssues.score}%
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.85rem', color: '#6b7280', marginTop: 16 }}>Your mind map has been updated with this score.</p>
                 </div>
-                <div style={{ padding:'6px 14px', borderRadius:10,
-                  background: depIssues.score>=70?'#f0fdf4':depIssues.score>=40?'#fffbeb':'#fef2f2',
-                  border:`1.5px solid ${depIssues.score>=70?'#22c55e':depIssues.score>=40?'#f59e0b':'#ef4444'}` }}>
-                  <span style={{ fontSize:'0.7rem', color:'#6b7280' }}>Quiz Score </span>
-                  <span style={{ fontWeight:700, fontSize:'0.9rem',
-                    color: depIssues.score>=70?'#16a34a':depIssues.score>=40?'#b45309':'#dc2626' }}>
-                    {depIssues.score}%
-                  </span>
-                </div>
-              </div>
-              {depIssues.nodes?.length > 0
-                ? <DependencyGraph nodes={depIssues.nodes} />
-                : <p style={{ textAlign:'center', color:'#6b7280', padding:24, fontSize:'0.82rem' }}>
-                    No dependency data. Try re-running the quiz.
-                  </p>
-              }
+              ) : (
+                <>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+                    marginBottom:16, flexWrap:'wrap', gap:8 }}>
+                    <div>
+                      <p style={{ fontWeight:700, fontSize:'0.88rem', color:'#1e293b', margin:'0 0 2px' }}>
+                        Dependency Graph
+                      </p>
+                      <p style={{ fontSize:'0.74rem', color:'#6b7280', margin:0 }}>
+                        AI-generated based on your quiz performance
+                      </p>
+                    </div>
+                    <div style={{ padding:'6px 14px', borderRadius:10,
+                      background: depIssues.score>=70?'#f0fdf4':depIssues.score>=40?'#fffbeb':'#fef2f2',
+                      border:`1.5px solid ${depIssues.score>=70?'#22c55e':depIssues.score>=40?'#f59e0b':'#ef4444'}` }}>
+                      <span style={{ fontSize:'0.7rem', color:'#6b7280' }}>Quiz Score </span>
+                      <span style={{ fontWeight:700, fontSize:'0.9rem',
+                        color: depIssues.score>=70?'#16a34a':depIssues.score>=40?'#b45309':'#dc2626' }}>
+                        {depIssues.score}%
+                      </span>
+                    </div>
+                  </div>
+                  {depIssues.nodes?.length > 0
+                    ? <DependencyGraph nodes={depIssues.nodes} />
+                    : <p style={{ textAlign:'center', color:'#6b7280', padding:24, fontSize:'0.82rem' }}>
+                        No dependency data. Try re-running the quiz.
+                      </p>
+                  }
+                </>
+              )}
             </div>
           )}
 

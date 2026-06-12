@@ -277,6 +277,15 @@ function SvgNode({ x, y, w, h, node, selectedName, onClick }) {
           {score}%
         </text>
       )}
+      {node.bloomLevel && (
+        <g>
+          <rect x={tx + (typeof score === 'number' ? 88 : 55)} y={badgeY-9} width={58} height={17} rx="8" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="1"/>
+          <text x={tx + (typeof score === 'number' ? 88 : 55) + 29} y={badgeY+1} textAnchor="middle" dominantBaseline="middle"
+            style={{ fontSize:'0.58rem', fontWeight:800, fill:'#64748b', fontFamily:'Inter,sans-serif', textTransform:'uppercase' }}>
+            {node.bloomLevel}
+          </text>
+        </g>
+      )}
     </g>
   );
 }

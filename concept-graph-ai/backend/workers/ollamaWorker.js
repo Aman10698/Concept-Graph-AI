@@ -205,6 +205,24 @@ Respond in this exact JSON format:
         break;
       }
 
+      case 'extractAtomicConcepts': {
+        const result = await ollamaService.extractAtomicConcepts(payload.topicName);
+        succeed(result);
+        break;
+      }
+
+      case 'verifyDependencyEdge': {
+        const result = await ollamaService.verifyDependencyEdge(payload.source, payload.target);
+        succeed(result);
+        break;
+      }
+
+      case 'assignBloomLevel': {
+        const result = await ollamaService.assignBloomLevel(payload.topicName);
+        succeed(result);
+        break;
+      }
+
       default:
         fail(`Unknown task: "${task}"`);
     }

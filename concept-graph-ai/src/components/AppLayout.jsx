@@ -97,6 +97,7 @@ export default function AppLayout({ children }) {
     if (item.key === 'syllabuses')   return location.pathname === '/syllabuses'
     if (item.key === 'mysyllabuses') return location.pathname === '/my-syllabuses'
     if (item.key === 'depgraph')   return location.pathname === '/dep-graph'
+    if (item.key === 'learn')      return location.pathname === '/learn'
     if (item.key === 'settings')   return location.pathname === '/profile'
     if (item.key === 'rag')        return location.pathname === '/rag-study'
     if (item.key === 'chats')      return location.pathname === '/chats'

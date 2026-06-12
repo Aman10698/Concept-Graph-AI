@@ -85,8 +85,10 @@ Correct format:
 
 Now write exactly ${n} questions about "${concept}" at the ${bloomLevel} Bloom level, staying within the syllabus scope above:`;
 
+  const randomSeed = Math.floor(Math.random() * 1000000);
+
   try {
-    const raw = await generateText(prompt, { temperature: 0.75, numPredict: 800 });
+    const raw = await generateText(prompt, { temperature: 0.85, numPredict: 800, seed: randomSeed });
     console.log(`[bloomService] Raw Ollama output for ${bloomLevel}:\n${raw.slice(0, 400)}`);
 
     const questions = [];
@@ -195,8 +197,10 @@ Rules:
 
 Write ${n} questions about "${concept}" now:`;
 
+  const randomSeed = Math.floor(Math.random() * 1000000);
+
   try {
-    const raw = await generateText(prompt, { temperature: 0.75, numPredict: 1400 });
+    const raw = await generateText(prompt, { temperature: 0.85, numPredict: 1400, seed: randomSeed });
     console.log(`[bloomService] MCQ raw:\n${raw.slice(0, 600)}`);
 
     const mcqs = [];
@@ -206,8 +210,10 @@ Write ${n} questions about "${concept}" now:`;
     for (const block of blocks) {
       const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
       const get = (prefix) => {
-        const line = lines.find(l => l.toUpperCase().startsWith(prefix.toUpperCase() + ':'));
-        return line ? line.slice(prefix.length + 1).trim() : '';
+        // Handle optional numbering "1. ", markdown "**", and allow ":" or ")"
+        const regex = new RegExp(`^(?:\\d+\\.\\s*)?(?:\\*\\*|\\*)?${prefix}(?:\\*\\*|\\*)?[:\\)]\\s*(.+)`, 'i');
+        const line = lines.find(l => regex.test(l));
+        return line ? line.match(regex)[1].trim() : '';
       };
 
       const question  = get('Q');
@@ -241,12 +247,14 @@ Write ${n} questions about "${concept}" now:`;
       console.warn(`[bloomService] MCQ parser got no results for "${concept}" — using fallback`);
       const verbs = BLOOM_VERBS[bloomLevel] || 'Explain';
       const verb = verbs.split(',')[0].trim();
+      const aspects = ['key characteristic', 'primary purpose', 'common application', 'main limitation', 'fundamental principle'];
       for (let i = 0; i < n; i++) {
+        const aspect = aspects[i % aspects.length];
         mcqs.push({
-          question:    `${verb} the key characteristic of "${concept}"?`,
-          options:     { A: `Key aspect of ${concept}`, B: 'Unrelated concept', C: 'Incorrect definition', D: 'Partially correct' },
+          question:    `${verb} the ${aspect} of "${concept}"?`,
+          options:     { A: `Correct description of the ${aspect}`, B: 'Unrelated concept', C: 'Incorrect definition', D: 'Partially correct' },
           correct:     'A',
-          explanation: `Option A correctly describes a key aspect of ${concept}.`,
+          explanation: `Option A correctly describes the ${aspect} of ${concept}.`,
           bloomLevel,
           concept,
           type:        'mcq',
@@ -472,52 +480,48 @@ const generateDependencyAnalysis = async (concept, bloomLevel, parentTopic, quiz
     .map(q => `Q${q.index}: "${q.question}"`)
     .join('\n');
 
-  const prompt = `You are an AI tutor. ${context}
+  const prompt = `You are an expert educational diagnostician. ${context}
 A student finished a "${bloomLevel}" Bloom level quiz on the topic "${concept}".
-Score: ${score}%.
+Overall Score: ${score}%.
 
-These are the EXACT quiz questions that were asked:
-${questionList}
+Quiz Performance:
+${resultsText}
 
-Your task: For each question above, extract the KEY SUB-TOPIC it is testing (2-5 words).
-Then create a dependency tree where:
-- Root node is "${concept}" (PARENT: none, STATUS: current)
-- Each child node is a sub-topic extracted from ONE of the quiz questions above
-- Use ONLY sub-topics from the quiz questions listed above — do NOT invent new topics
+Your task: Analyze the student's performance and identify the REAL FUNDAMENTAL PREREQUISITE CONCEPTS they are weak or strong in.
+Do NOT just summarize or repeat the words from the questions. Identify the actual underlying foundational concepts (e.g. if they fail a question on "Truth Table Purpose", the fundamental concept might be "Boolean Logic").
 
-Output one node per quiz question PLUS the root, one blank line between each, using this EXACT format:
+CRITICAL RULES:
+1. Generate a total of 1 to 2 immediate prerequisite concepts for the weak areas, and maybe 1 for the strong areas.
+2. The overall graph must be 3-5 nodes MAX (including the root).
+3. The Root node is ALWAYS "${concept}" (PARENT: none, STATUS: current)
+4. Child nodes must be genuine, distinct, broad foundational concepts.
 
-NODE: [sub-topic name from the question]
+Output one node per block, one blank line between each, using this EXACT format:
+
+NODE: [Concept Name]
 PARENT: [parent node name or none]
 STATUS: [strong | partial | weak]
-REASON: [one sentence referencing the quiz result]
-
-For STATUS, use the quiz result:
-${questionNodes.map(q => `Q${q.index} → ${q.status}`).join(', ')}
+REASON: [one concise sentence explaining why based on their performance]
 
 First node must be "${concept}" with PARENT: none and STATUS: current.
 Each PARENT must match a previous NODE exactly.
-No extra text. No topics that were not in the quiz questions. Start now:`;
+No extra text. Start now:`;
 
-  // ── Helper: deterministic node builder from quiz questions ──────────────
+  // ── Helper: deterministic fallback ───────────────
   const buildNodesFromQuestions = () => {
     const root = { name: concept, parent: 'none', status: 'current',
       reason: 'The concept being studied.' };
-    const children = questionNodes.map(q => {
-      // Use first 4-5 meaningful words of the question as sub-topic label
-      const words = q.question
-        .replace(/[?]/g, '')
-        .split(/\s+/)
-        .filter(w => !['what','is','the','a','an','of','how','why','does','do','are','can','in','on','to','for','with','that','this','which','when','where'].includes(w.toLowerCase()));
-      const label = words.slice(0, 4).join(' ') || `Topic ${q.index}`;
-      return {
-        name:   label,
-        parent: concept,
-        status: q.status,
-        reason: `Based on quiz question ${q.index}.`,
-      };
-    });
-    return [root, ...children];
+    
+    // As a simple fallback without AI, we just define 1 or 2 generic foundational nodes
+    const isWeak = score < 70;
+    const fallbackNode = {
+      name: `${concept} Fundamentals`,
+      parent: concept,
+      status: isWeak ? 'weak' : 'strong',
+      reason: isWeak ? 'Performance indicates gaps in foundational knowledge.' : 'Performance indicates strong foundational knowledge.'
+    };
+    
+    return [root, fallbackNode];
   };
 
   try {
@@ -554,10 +558,10 @@ No extra text. No topics that were not in the quiz questions. Start now:`;
         reason: 'The concept being studied.' });
     }
 
-    // Fallback: if AI gave fewer child nodes than quiz questions, build deterministically
+    // Fallback: if AI gave fewer child nodes than 1, build deterministically
     const childCount = nodes.filter(n => n.status !== 'current').length;
-    if (childCount < quizResults.length) {
-      console.warn('[bloomService] AI gave fewer nodes than questions — using deterministic fallback');
+    if (childCount < 1) {
+      console.warn('[bloomService] AI gave fewer nodes than expected — using deterministic fallback');
       const fallback = buildNodesFromQuestions();
       console.log('[bloomService] Fallback nodes:', fallback.length);
       return { score, nodes: fallback };

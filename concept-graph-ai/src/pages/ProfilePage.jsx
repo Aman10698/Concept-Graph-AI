@@ -1,33 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { 
+  User, BookOpen, Target, Award, HelpCircle, 
+  LogOut, Info, Settings, Mail, Fingerprint, Database 
+} from 'lucide-react'
 
 export default function ProfilePage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const [stats, setStats] = useState({ syllabuses: 0, topics: 0, mastered: 0, questions: 0 })
 
-  /* ── derive stats from localStorage ── */
-  useEffect(() => {
-    try {
-      const topics    = JSON.parse(localStorage.getItem('learningTopicsData')    || '{}')
-      const evalData  = JSON.parse(localStorage.getItem('learningEvaluationData') || '{}')
-      const questions = JSON.parse(localStorage.getItem('learningQuestionsData')  || '{}')
-
-      const topicList = topics?.topics ?? []
-      const mastered  = topicList.filter(t => {
-        const name = typeof t === 'string' ? t : t.name
-        return evalData[name]?.rating === 'strong'
-      }).length
-
-      setStats({
-        syllabuses: parseInt(localStorage.getItem('totalSessionCount') || '1', 10),
-        topics:     topicList.length,
-        mastered,
-        questions:  questions?.questions?.length ?? 0,
-      })
-    } catch (_) {}
-  }, [])
 
   const initials = user?.displayName
     ? user.displayName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -42,98 +24,130 @@ export default function ProfilePage() {
     navigate('/login')
   }
 
-  const statCards = [
-    { label: 'Syllabuses Uploaded', value: stats.syllabuses, color: '#6366f1' },
-    { label: 'Topics Extracted',    value: stats.topics,     color: '#3b82f6' },
-    { label: 'Topics Mastered',     value: stats.mastered,   color: '#22c55e' },
-    { label: 'Questions Generated', value: stats.questions,  color: '#f59e0b' },
-  ]
+
 
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto' }}>
+    <div style={{ maxWidth: 780, margin: '0 auto', paddingBottom: 60 }}>
+      <style>{`
+        .profile-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .stat-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          transition: all 0.25s;
+        }
+        .stat-card:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 10px 25px rgba(0,0,0,0.06);
+          border-color: #cbd5e1;
+        }
+        .action-btn {
+          transition: all 0.2s;
+        }
+        .action-btn:hover {
+          transform: translateY(-2px);
+          filter: brightness(0.95);
+        }
+      `}</style>
 
       {/* ── Page title ── */}
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em', marginBottom: 4 }}>
-          Profile
-        </h1>
-        <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>Your account details and learning summary</p>
+      <div style={{ marginBottom: 36, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ background: '#e0e7ff', padding: 10, borderRadius: 12, color: '#6366f1' }}>
+          <User size={24} strokeWidth={2.5} />
+        </div>
+        <div>
+          <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.03em', margin: 0 }}>
+            Profile Details
+          </h1>
+          <p style={{ color: '#64748b', fontSize: '0.95rem', margin: '2px 0 0' }}>Your account overview and learning progress</p>
+        </div>
       </div>
 
       {/* ── Profile card ── */}
-      <div className="t-card" style={{ padding: '28px 28px', marginBottom: 24, display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <div className="profile-card" style={{ padding: '32px', marginBottom: 28, display: 'flex', gap: 28, alignItems: 'center', flexWrap: 'wrap', background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)' }}>
         {/* Avatar */}
         <div style={{
-          width: 80, height: 80, borderRadius: '50%', flexShrink: 0,
-          background: 'linear-gradient(135deg, #6366f1, #3b82f6)',
+          width: 88, height: 88, borderRadius: '50%', flexShrink: 0,
+          background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '1.8rem', fontWeight: 800, color: '#fff',
-          boxShadow: '0 4px 20px rgba(99,102,241,0.35)',
+          fontSize: '2rem', fontWeight: 800, color: '#fff',
+          boxShadow: '0 8px 24px rgba(99,102,241,0.3)',
+          border: '4px solid #fff'
         }}>
           {initials}
         </div>
 
         {/* Info */}
         <div style={{ flex: 1, minWidth: 200 }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', marginBottom: 4 }}>
-            {user?.displayName || 'Student'}
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: 4 }}>
+            {user?.displayName || 'Student User'}
           </h2>
-          <p style={{ color: '#6b7280', fontSize: '0.88rem', marginBottom: 6 }}>{user?.email}</p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+          <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Mail size={14} /> {user?.email}
+          </p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <span style={{
-              padding: '3px 10px', borderRadius: 999,
-              background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)',
-              fontSize: '0.75rem', fontWeight: 600, color: '#6366f1',
-            }}>Active Learner</span>
+              padding: '4px 12px', borderRadius: 999,
+              background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)',
+              fontSize: '0.78rem', fontWeight: 700, color: '#6366f1',
+              display: 'flex', alignItems: 'center', gap: 4
+            }}>
+              <Award size={12} strokeWidth={3} /> Active Learner
+            </span>
             <span style={{
-              padding: '3px 10px', borderRadius: 999,
-              background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)',
-              fontSize: '0.75rem', fontWeight: 600, color: '#16a34a',
-            }}>Member since {joinDate}</span>
+              padding: '4px 12px', borderRadius: 999,
+              background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)',
+              fontSize: '0.78rem', fontWeight: 700, color: '#10b981',
+              display: 'flex', alignItems: 'center', gap: 4
+            }}>
+              <Target size={12} strokeWidth={3} /> Member since {joinDate}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* ── Stats grid ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 14, marginBottom: 24 }}>
-        {statCards.map(s => (
-          <div key={s.label} className="t-card" style={{
-            padding: '18px 16px', borderLeft: `4px solid ${s.color}`, background: `${s.color}07`,
-          }}>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: s.color, lineHeight: 1, marginBottom: 3 }}>{s.value}</div>
-            <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.label}</div>
-          </div>
-        ))}
-      </div>
+
 
       {/* ── Account details ── */}
-      <div className="t-card" style={{ padding: '22px 24px', marginBottom: 20 }}>
-        <h3 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 18 }}>
-          Account
-        </h3>
+      <div className="profile-card" style={{ padding: '28px 32px', marginBottom: 32 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+          <Settings size={20} color="#475569" />
+          <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
+            Account Configuration
+          </h3>
+        </div>
+        
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {[
-            { label: 'Email address', value: user?.email, badge: 'Firebase Auth' },
-            { label: 'Display name',  value: user?.displayName || '—', badge: null },
-            { label: 'User ID',       value: user?.uid, mono: true, badge: null },
-            { label: 'Data storage',  value: 'MongoDB (local) + Firebase Auth', badge: 'Connected', badgeColor: '#16a34a', badgeBg: 'rgba(34,197,94,0.1)' },
+            { label: 'Email address', icon: <Mail size={16}/>, value: user?.email, badge: 'Firebase Auth' },
+            { label: 'Display name',  icon: <User size={16}/>, value: user?.displayName || '—' },
+            { label: 'User ID',       icon: <Fingerprint size={16}/>, value: user?.uid, mono: true },
+            { label: 'Data storage',  icon: <Database size={16}/>, value: 'MongoDB (local)', badge: 'Connected', badgeColor: '#10b981', badgeBg: '#dcfce7' },
           ].map((row, i, arr) => (
             <div key={row.label} style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '13px 0',
+              padding: '16px 0',
               borderBottom: i < arr.length - 1 ? '1px solid #f1f5f9' : 'none',
             }}>
-              <div>
-                <p style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: 2 }}>{row.label}</p>
-                <p style={{ fontSize: row.mono ? '0.72rem' : '0.8rem', color: '#6b7280', fontFamily: row.mono ? 'monospace' : 'inherit' }}>{row.value}</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ color: '#94a3b8' }}>{row.icon}</div>
+                <div>
+                  <p style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>{row.label}</p>
+                  <p style={{ fontSize: row.mono ? '0.75rem' : '0.85rem', color: '#64748b', fontFamily: row.mono ? 'monospace' : 'inherit', margin: 0 }}>{row.value}</p>
+                </div>
               </div>
               {row.badge && (
                 <span style={{
-                  padding: '3px 10px', borderRadius: 999,
-                  background: row.badgeBg || 'rgba(148,163,184,0.12)',
-                  border: `1px solid ${row.badgeColor || '#9ca3af'}33`,
-                  fontSize: '0.73rem', fontWeight: 600,
-                  color: row.badgeColor || '#6b7280',
+                  padding: '4px 12px', borderRadius: 999,
+                  background: row.badgeBg || '#f1f5f9',
+                  border: `1px solid ${row.badgeColor || '#94a3b8'}40`,
+                  fontSize: '0.75rem', fontWeight: 700,
+                  color: row.badgeColor || '#64748b',
                 }}>{row.badge}</span>
               )}
             </div>
@@ -142,34 +156,40 @@ export default function ProfilePage() {
       </div>
 
       {/* ── Actions ── */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
         <button
           onClick={() => navigate('/syllabuses')}
+          className="action-btn"
           style={{
-            padding: '10px 22px', borderRadius: 10, fontWeight: 700, fontSize: '0.88rem',
-            background: 'linear-gradient(135deg,#6366f1,#3b82f6)', color: '#fff', border: 'none',
-            cursor: 'pointer', boxShadow: '0 2px 10px rgba(99,102,241,0.3)',
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '12px 24px', borderRadius: 12, fontWeight: 700, fontSize: '0.9rem',
+            background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff', border: 'none',
+            cursor: 'pointer', boxShadow: '0 4px 14px rgba(99,102,241,0.3)',
           }}
         >
-          View My Syllabuses
+          <BookOpen size={18} /> View Syllabuses
         </button>
         <button
           onClick={() => navigate('/about')}
+          className="action-btn"
           style={{
-            padding: '10px 22px', borderRadius: 10, fontWeight: 700, fontSize: '0.88rem',
-            background: '#f8fafc', color: '#374151', border: '1.5px solid #e2e8f0', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '12px 24px', borderRadius: 12, fontWeight: 700, fontSize: '0.9rem',
+            background: '#f8fafc', color: '#334155', border: '1.5px solid #e2e8f0', cursor: 'pointer',
           }}
         >
-          About ConceptGraphAI
+          <Info size={18} /> About Project
         </button>
         <button
           onClick={handleLogout}
+          className="action-btn"
           style={{
-            padding: '10px 22px', borderRadius: 10, fontWeight: 700, fontSize: '0.88rem',
-            background: '#fff', color: '#ef4444', border: '1.5px solid #fca5a5', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto',
+            padding: '12px 24px', borderRadius: 12, fontWeight: 700, fontSize: '0.9rem',
+            background: '#fff', color: '#ef4444', border: '1.5px solid #fecaca', cursor: 'pointer',
           }}
         >
-          Sign Out
+          <LogOut size={18} /> Sign Out
         </button>
       </div>
     </div>

@@ -470,8 +470,6 @@ export default function PracticePage() {
                 topics={filteredTopics}
                 evalData={evalData}
                 courseTitle={sessionTitle}
-                onSelectTopic={setSelectedTopic}
-                onSelectSubtopic={(subtopicName) => setSelectedTopic(subtopicName)}
                 onCardClick={(name, parentName) => {
                   // Resolve subtopics if this is a topic-level node
                   const topicObj = topics.find(t => getName(t) === name)

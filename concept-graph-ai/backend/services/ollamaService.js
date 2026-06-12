@@ -23,6 +23,7 @@ const generateText = async (prompt, options = {}) => {
       temperature: options.temperature ?? 0.6,
       num_predict: options.numPredict ?? 800,  // cap default; callers set higher if needed
       top_p: options.topP ?? 0.9,
+      seed: options.seed,
     },
   };
 
@@ -915,98 +916,159 @@ Return ONLY valid JSON (no markdown, no explanation outside JSON):
 const analyzeDependencies = async (topics, docSnippet = '', subject = '') => {
   const topicNames = topics.map(t => (typeof t === 'string' ? t : t.name)).filter(Boolean);
   const subjectName = subject || topicNames[0] || 'Course';
-  // Use singleMode if there are only 1 or 2 topics, implying the user wants a focused graph for specific concepts
-  const singleMode = topicNames.length <= 2;
 
-  // ── IMPORTANT: Ollama must NOT return x/y coordinates.
-  // React Flow + Dagre compute layout automatically from the graph topology.
+  const prompt = `You are an expert curriculum designer.
+  
+Course Context: "${subjectName}"
+Extracted Concepts:
+${topicNames.map(t => `- ${t}`).join('\n')}
 
-  const singleTopicPrompt = `You are an expert curriculum designer and educational diagnostician.
+Your task is to identify prerequisite relationships BETWEEN THESE EXACT CONCEPTS ONLY.
+A prerequisite relationship means a student MUST understand the "source" concept before learning the "target" concept.
 
-A student is preparing to learn or struggling with the following topic(s): ${topicNames.join(', ')}
-(Context/Course: "${subjectName}")
-
-Step 1: Analyze the core topic(s) and determine the exact FOUNDATIONAL prerequisite concepts, prior knowledge, and skills required to understand them.
-Step 2: Generate a hierarchical dependency graph showing these foundational topics that the student is likely lacking and MUST work upon BEFORE tackling the core topic(s).
-
-Rules:
-1. Create exactly ONE root node (type "root") for "${topicNames[0]}".
-2. Create 2-4 category nodes (type "category") representing broad prerequisite areas needed for this topic.
-3. Create 2-4 concept nodes (type "concept") under each category representing the SPECIFIC foundational skills the student needs to learn first. DO NOT just repeat the target topic.
-4. Each node MUST have:
-   - id: unique string, no spaces (use hyphens)
-   - name: clear human-readable name of the prerequisite concept
-   - type: "root" | "category" | "concept"
-   - status: "weak" if score<45, "partial" if 45-74, "strong" if >=75, "not_started" if no score
-   - score: integer 0-100 (estimated student mastery) or null for root
-   - description: one concise sentence explaining why this prerequisite is important
-5. Edges:
-   - type "hierarchy" for parent → child (structural)
-   - type "prerequisite" for cross-dependencies (concept B truly requires concept A first)
-6. recommendedPath: ordered list of concept names, foundational first, ending with the root topic
-7. DO NOT include x, y, position, or coordinate fields
-8. Return ONLY valid JSON — no markdown, no explanation
+CRITICAL RULES:
+1. You may ONLY create prerequisite relationships between concepts that already exist in the list above.
+2. DO NOT invent, hallucinate, or add new concepts. If a concept is not in the list, ignore it.
+3. Include a "confidence" score (0-100) for each dependency edge, representing how strictly required the prerequisite is.
+4. Return ONLY valid JSON in this exact format, with no other text or explanation:
 
 {
-  "nodes": [
-    { "id": "root", "name": "${topicNames[0]}", "type": "root", "status": "not_started", "score": null, "description": "The main topic to master." }
-  ],
-  "edges": [],
-  "recommendedPath": []
+  "edges": [
+    { "source": "Exact Concept Name from List", "target": "Another Exact Concept Name from List", "confidence": 95 }
+  ]
 }`;
-
-  const fullCoursePrompt = `You are an expert curriculum designer and educational diagnostician.
-
-Course: "${subjectName}"
-Topics covered: ${topicNames.join(', ')}
-
-Step 1: Analyze the provided topics and identify the underlying logical progression.
-Step 2: Identify any unlisted FOUNDATIONAL prerequisite concepts that a student might be lacking and MUST understand before learning these topics.
-Step 3: Generate a hierarchical educational dependency graph incorporating both the provided topics and the necessary foundational prerequisites.
-
-Rules:
-1. Create exactly ONE root node (type "root") for "${subjectName}"
-2. Create 3-5 category nodes (type "category") representing major phases of learning
-3. Create concept nodes (type "concept") under each category. 
-   - You MUST include the main provided topics.
-   - You MUST ALSO invent and include prerequisite nodes that represent foundational skills the student needs to learn first. DO NOT just copy-paste the provided topics.
-4. Each node MUST have:
-   - id: unique string, no spaces (use hyphens)
-   - name: clear human-readable name
-   - type: "root" | "category" | "concept"
-   - status: "weak" | "partial" | "strong" | "not_started"
-   - score: integer 0-100 or null for root
-   - description: one concise sentence
-5. Edges:
-   - type "hierarchy" for parent → child
-   - type "prerequisite" for genuine cross-topic dependencies
-6. recommendedPath: ordered topic names, foundational first
-7. DO NOT include x, y, position, or coordinate fields
-8. Return ONLY valid JSON
-
-{
-  "nodes": [],
-  "edges": [],
-  "recommendedPath": []
-}`;
-
-  const prompt = singleMode ? singleTopicPrompt : fullCoursePrompt;
 
   try {
-    const raw = await generateText(prompt, { temperature: 0.25, numPredict: 3500 });
+    const raw = await generateText(prompt, { temperature: 0.1, numPredict: 2000 });
     const parsed = extractJSON(raw);
-    if (!parsed) throw new Error('Invalid dependency JSON');
-    if (!Array.isArray(parsed.nodes) || parsed.nodes.length < 2)
-      throw new Error('nodes array missing or too short');
-    // Strip any coordinates Ollama may have hallucinated
-    parsed.nodes = parsed.nodes.map(({ x, y, position, ...rest }) => rest);
-    console.log(`✅ Dependency graph: ${parsed.nodes.length} nodes, ${(parsed.edges || []).length} edges`);
-    return parsed;
+    if (!parsed || !Array.isArray(parsed.edges)) throw new Error('Invalid dependency JSON');
+    
+    // Validate edges to ensure strictly no hallucinations
+    const validNames = new Set(topicNames.map(t => t.toLowerCase()));
+    
+    // We map the edge back to the exact casing provided in topicNames
+    const nameMap = {};
+    topicNames.forEach(t => { nameMap[t.toLowerCase()] = t; });
+
+    const validEdges = parsed.edges
+      .filter(e => 
+        e.source && e.target && 
+        validNames.has(e.source.toLowerCase()) && 
+        validNames.has(e.target.toLowerCase()) &&
+        e.source.toLowerCase() !== e.target.toLowerCase()
+      )
+      .map(e => ({
+        id: `e-${nameMap[e.source.toLowerCase()]}-${nameMap[e.target.toLowerCase()]}`,
+        source: nameMap[e.source.toLowerCase()],
+        target: nameMap[e.target.toLowerCase()],
+        type: 'prerequisite',
+        confidence: typeof e.confidence === 'number' ? e.confidence : 80
+      }));
+
+    // Build the nodes array explicitly from the input topics to guarantee no hallucinations
+    const nodes = topicNames.map(name => ({
+      id: name,
+      name: name,
+      type: 'concept',
+      status: 'not_started',
+      score: null,
+      description: ''
+    }));
+
+    console.log(`✅ Dependency graph: ${nodes.length} nodes, ${validEdges.length} valid edges (stripped ${parsed.edges.length - validEdges.length} hallucinated)`);
+    return { nodes, edges: validEdges, recommendedPath: [] };
   } catch (err) {
     console.error('analyzeDependencies error:', err.message);
     return null;
   }
 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5.5 MULTI-STEP DEPENDENCY ANALYSIS HELPERS
+══════════════════════════════════════════════════════════════════════════════ */
+
+const extractAtomicConcepts = async (topicName) => {
+  const prompt = `You are an expert curriculum designer.
+  
+For the topic "${topicName}", return only the fundamental, atomic concepts required to understand it.
+Do not include the topic itself unless it is atomic.
+Do not hallucinate external topics unrelated to understanding ${topicName}.
+
+Return ONLY a JSON array of strings:
+[
+  "Concept A",
+  "Concept B"
+]`;
+
+  try {
+    const raw = await generateText(prompt, { temperature: 0.1, numPredict: 500 });
+    const parsed = extractJSON(raw);
+    if (!Array.isArray(parsed)) throw new Error('Invalid JSON array from Ollama');
+    return parsed.filter(t => typeof t === 'string' && t.trim().length > 0);
+  } catch (err) {
+    console.error('extractAtomicConcepts error:', err.message);
+    return [];
+  }
+};
+
+const verifyDependencyEdge = async (source, target) => {
+  const prompt = `You are an expert curriculum designer.
+
+Consider two concepts:
+A = "${source}"
+B = "${target}"
+
+Can a student fully understand B without first understanding A?
+Does A act as a strict prerequisite for B?
+
+Return ONLY valid JSON in this exact format:
+{
+  "source": "${source}",
+  "target": "${target}",
+  "required": true or false,
+  "confidence": 0-100
+}`;
+
+  try {
+    const raw = await generateText(prompt, { temperature: 0.1, numPredict: 300 });
+    const parsed = extractJSON(raw);
+    if (!parsed || typeof parsed.required !== 'boolean') throw new Error('Invalid JSON from Ollama');
+    return {
+      required: parsed.required,
+      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 50
+    };
+  } catch (err) {
+    console.error(`verifyDependencyEdge error (${source} -> ${target}):`, err.message);
+    return { required: false, confidence: 0 };
+  }
+};
+
+const assignBloomLevel = async (topicName) => {
+  const prompt = `You are an expert educator.
+  
+Classify the cognitive level of the topic "${topicName}" according to Bloom's Taxonomy.
+Choose exactly one of the following levels: "Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create".
+
+Return ONLY valid JSON in this exact format:
+{
+  "topic": "${topicName}",
+  "level": "Apply"
+}`;
+
+  try {
+    const raw = await generateText(prompt, { temperature: 0.1, numPredict: 150 });
+    const parsed = extractJSON(raw);
+    const validLevels = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
+    if (parsed && validLevels.includes(parsed.level)) {
+      return parsed.level;
+    }
+    return "Understand"; // Default fallback
+  } catch (err) {
+    console.error(`assignBloomLevel error (${topicName}):`, err.message);
+    return "Understand";
+  }
+};
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    6. LEARNING PATH GENERATION
@@ -1594,5 +1656,8 @@ module.exports = {
   explainWeakNode,
   analyzeDependencies,
   generateLearningPath,
+  extractAtomicConcepts,
+  verifyDependencyEdge,
+  assignBloomLevel,
 };
 

@@ -205,6 +205,24 @@ const extractMindMapStructure = async (text) => {
   return result;
 };
 
+const extractAtomicConcepts = async (topicName) => {
+  console.log(`🔀 [Worker] Extracting atomic concepts for: ${topicName}`);
+  const result = await runOllamaWorker('extractAtomicConcepts', { topicName });
+  return result;
+};
+
+const verifyDependencyEdge = async (source, target) => {
+  console.log(`🔀 [Worker] Verifying edge: ${source} -> ${target}`);
+  const result = await runOllamaWorker('verifyDependencyEdge', { source, target });
+  return result;
+};
+
+const assignBloomLevel = async (topicName) => {
+  console.log(`🔀 [Worker] Assigning Bloom level for: ${topicName}`);
+  const result = await runOllamaWorker('assignBloomLevel', { topicName });
+  return result;
+};
+
 module.exports = {
   extractTopicsAdvanced,
   extractMindMapStructure,     // ← new: NCERT/chapter heading-based mind map
@@ -220,4 +238,7 @@ module.exports = {
   generateLearningPath,
   generateText,
   testOllamaConnection,
+  extractAtomicConcepts,
+  verifyDependencyEdge,
+  assignBloomLevel,
 };

@@ -205,21 +205,7 @@ export default function MySyllabusesPage() {
                     )}
                   </div>
 
-                  {/* Progress bar */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ flex: 1, height: 6, background: '#e2e8f0',
-                      borderRadius: 999, overflow: 'hidden', maxWidth: 260 }}>
-                      <div style={{
-                        height: '100%', width: `${s.progress || 0}%`,
-                        background: `linear-gradient(90deg, ${color}, ${color}cc)`,
-                        borderRadius: 999, transition: 'width 0.5s ease',
-                      }} />
-                    </div>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color }}>
-                      {s.masteredCount}/{s.topicCount > 0 ? s.topicCount : (s.answeredCount || '?')} mastered
-                      {s.topicCount > 0 ? ` (${s.progress}%)` : ''}
-                    </span>
-                  </div>
+
                 </div>
 
                 {/* ── Right: actions ── */}

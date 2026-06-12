@@ -487,19 +487,6 @@ export default function DepGraphPage() {
                         )}
                       </div>
                       {/* progress bar */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ flex: 1, height: 5, background: '#e2e8f0',
-                          borderRadius: 999, overflow: 'hidden', maxWidth: 220 }}>
-                          <div style={{
-                            height: '100%', width: `${s.progress || 0}%`,
-                            background: `linear-gradient(90deg, ${col}, ${col}cc)`,
-                            borderRadius: 999, transition: 'width 0.5s',
-                          }} />
-                        </div>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: col }}>
-                          {s.masteredCount}/{s.topicCount || '?'} mastered ({s.progress}%)
-                        </span>
-                      </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6366f1' }}>
                       <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
