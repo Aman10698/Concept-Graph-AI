@@ -7,9 +7,10 @@
  * - Streaming SSE responses from Ollama
  * - Context strictly grounded in uploaded notes
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Folder, ChevronRight, GraduationCap, ShieldCheck, FileText, Sparkles, Send } from 'lucide-react';
 
 const API = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '');
 
@@ -454,54 +455,40 @@ function DocItem({ doc, isActive, onClick, msgCount }) {
       style={{
         width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
         fontFamily: "'Inter', sans-serif",
-        padding: '9px 11px', borderRadius: 11, marginBottom: 3,
-        background: isActive ? 'rgba(99,102,241,0.09)' : 'transparent',
+        padding: '12px 14px', borderRadius: 12, marginBottom: 8,
+        background: isActive ? '#f5f3ff' : 'transparent',
         transition: 'all 0.15s ease',
-        display: 'flex', alignItems: 'center', gap: 10,
-        borderLeft: `3px solid ${isActive ? '#6366f1' : 'transparent'}`,
+        display: 'flex', alignItems: 'center', gap: 12,
+        borderLeft: `3px solid ${isActive ? '#7c3aed' : 'transparent'}`,
       }}
-      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(99,102,241,0.05)'; }}
+      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#f8fafc'; }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
     >
       <div style={{
-        width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-        background: isActive ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#f1f5f9',
+        width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+        background: isActive ? '#7c3aed' : '#f1f5f9',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: isActive ? '#fff' : '#64748b',
+        color: isActive ? '#fff' : '#94a3b8',
         transition: 'all 0.15s',
       }}>
-        <FileIcon />
+        <FileText size={16} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{
-          margin: 0, fontWeight: 600, fontSize: '0.8rem',
-          color: isActive ? '#4f46e5' : '#374151',
+          margin: 0, fontWeight: 700, fontSize: '0.85rem',
+          color: isActive ? '#0f172a' : '#334155',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           fontFamily: "'Inter', sans-serif",
-          letterSpacing: '-0.01em',
         }}>{cleanFilename(doc.filename)}</p>
         <p style={{
-          margin: '2px 0 0', fontSize: '0.67rem', color: '#9ca3af',
+          margin: '2px 0 0', fontSize: '0.7rem', color: '#94a3b8',
           fontFamily: "'Inter', sans-serif",
         }}>
           {doc.chunkCount} chunks indexed
-          {msgCount > 0 && (
-            <span style={{
-              marginLeft: 6,
-              background: 'rgba(99,102,241,0.12)',
-              color: '#6366f1',
-              borderRadius: 999,
-              padding: '1px 6px',
-              fontSize: '0.63rem',
-              fontWeight: 700,
-            }}>
-              {msgCount}
-            </span>
-          )}
         </p>
       </div>
       {isActive && (
-        <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366f1', flexShrink: 0, boxShadow: '0 0 6px rgba(99,102,241,0.5)' }} />
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#7c3aed', flexShrink: 0 }} />
       )}
     </button>
   );
@@ -524,7 +511,8 @@ export default function ChatsPage() {
   const [loadingHist, setLoadingHist] = useState(false); // reserved for future skeleton loading UI
   // Track saved message counts per documentId for sidebar badges
   const [histCounts, setHistCounts] = useState({});
-  const [level, setLevel] = useState('medium');
+  const [level, setLevel] = useState('beginner');
+  const [showLevelDropdown, setShowLevelDropdown] = useState(false);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -818,24 +806,23 @@ export default function ChatsPage() {
         {/* ════ LEFT SIDEBAR ════ */}
         <div style={{
           background: '#fff',
-          borderRight: '1px solid rgba(226,232,240,0.8)',
+          borderRight: '1px solid #f1f5f9',
           display: 'flex', flexDirection: 'column',
           overflow: 'hidden',
-          boxShadow: '2px 0 12px rgba(99,102,241,0.04)',
+          boxShadow: '2px 0 12px rgba(0,0,0,0.02)',
         }}>
           {/* Header */}
-          <div style={{ padding: '20px 16px 14px', borderBottom: '1px solid #f1f5f9' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ padding: '24px 20px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{
-                  width: 28, height: 28, borderRadius: 8,
-                  background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  width: 34, height: 34, borderRadius: 8,
+                  background: '#f4f0ff',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 3px 8px rgba(99,102,241,0.3)',
                 }}>
-                  <BotIcon style={{ color: '#fff' }} />
+                  <Folder size={18} color="#7c3aed" />
                 </div>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: '0.9rem', color: '#0f172a', fontFamily: "'Inter', sans-serif", letterSpacing: '-0.02em' }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: '1rem', color: '#0f172a', fontFamily: "'Inter', sans-serif", letterSpacing: '-0.02em' }}>
                   My Notes
                 </p>
               </div>
@@ -843,24 +830,23 @@ export default function ChatsPage() {
                 to="/rag-study"
                 style={{
                   display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '5px 10px', borderRadius: 7,
-                  background: 'rgba(99,102,241,0.08)', color: '#6366f1',
-                  fontSize: '0.72rem', fontWeight: 700, textDecoration: 'none',
+                  padding: '6px 12px', borderRadius: 8,
+                  background: '#f4f0ff', color: '#7c3aed',
+                  fontSize: '0.75rem', fontWeight: 700, textDecoration: 'none',
                   transition: 'all 0.15s', fontFamily: "'Inter', sans-serif",
-                  letterSpacing: '0.01em',
                 }}
                 title="Upload new document"
               >
                 <PlusIcon /> Add
               </Link>
             </div>
-            <p style={{ margin: 0, fontSize: '0.7rem', color: '#9ca3af', fontFamily: "'Inter', sans-serif" }}>
+            <p style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8', fontFamily: "'Inter', sans-serif", paddingLeft: 4 }}>
               Select a note to chat about
             </p>
           </div>
 
           {/* Doc list */}
-          <div className="chat-scroll" style={{ flex: 1, overflowY: 'auto', padding: '8px 8px' }}>
+          <div className="chat-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 12px' }}>
             {loadingDocs ? (
               <div style={{ padding: '32px 0', textAlign: 'center' }}>
                 <div style={{
@@ -907,97 +893,13 @@ export default function ChatsPage() {
             )}
           </div>
 
-          {/* Active doc indicator */}
-          {activeDoc && (
-            <div style={{
-              padding: '12px 14px',
-              borderTop: '1px solid #f1f5f9',
-              background: 'linear-gradient(135deg, rgba(99,102,241,0.03), rgba(139,92,246,0.02))',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                <div style={{
-                  width: 7, height: 7, borderRadius: '50%', background: '#22c55e',
-                  boxShadow: '0 0 6px rgba(34,197,94,0.6)',
-                  animation: 'pulseGlow 2s ease-in-out infinite',
-                }} />
-                <span style={{ fontSize: '0.66rem', fontWeight: 800, color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: "'Inter', sans-serif" }}>
-                  RAG Active
-                </span>
-              </div>
-              <p style={{
-                margin: 0, fontSize: '0.7rem', color: '#6b7280',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                fontFamily: "'Inter', sans-serif",
-              }}>
-                {cleanFilename(activeDoc.filename)}
-              </p>
-            </div>
-          )}
+
         </div>
 
         {/* ════ CHAT PANEL ════ */}
-        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#fff' }}>
 
-          {/* Chat header */}
-          <div style={{
-            padding: '12px 24px',
-            borderBottom: '1px solid rgba(226,232,240,0.7)',
-            background: 'rgba(255,255,255,0.95)',
-            backdropFilter: 'blur(12px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            flexShrink: 0,
-            boxShadow: '0 1px 0 rgba(99,102,241,0.04)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                width: 38, height: 38, borderRadius: 12,
-                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#fff', boxShadow: '0 4px 14px rgba(99,102,241,0.35)',
-              }}>
-                <BotIcon />
-              </div>
-              <div>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: '0.92rem', color: '#0f172a', fontFamily: "'Inter', sans-serif", letterSpacing: '-0.02em' }}>
-                  {activeDoc ? cleanFilename(activeDoc.filename) : 'Ollama Study Chat'}
-                </p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{
-                    width: 5, height: 5, borderRadius: '50%',
-                    background: streaming ? '#22c55e' : '#94a3b8',
-                    boxShadow: streaming ? '0 0 5px rgba(34,197,94,0.7)' : 'none',
-                    transition: 'all 0.3s',
-                  }} />
-                  <p style={{ margin: 0, fontSize: '0.7rem', color: streaming ? '#22c55e' : '#9ca3af', fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>
-                    {streaming
-                      ? 'Generating response…'
-                      : activeDoc
-                        ? `${activeDoc.chunkCount} chunks · llama3.1 · RAG grounded`
-                        : 'Select a note from the sidebar'
-                    }
-                  </p>
-                </div>
-              </div>
-            </div>
 
-            {messages.length > 0 && (
-              <button
-                onClick={clearChat}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '6px 12px', borderRadius: 9, border: '1px solid #e2e8f0',
-                  background: 'transparent', color: '#9ca3af',
-                  fontSize: '0.73rem', fontWeight: 600, cursor: 'pointer',
-                  transition: 'all 0.15s', fontFamily: "'Inter', sans-serif",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = '#fef2f2'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.background = 'transparent'; }}
-                title="Clear conversation"
-              >
-                <TrashIcon /> Clear
-              </button>
-            )}
-          </div>
 
           {/* ── Messages ── */}
           <div
@@ -1005,23 +907,32 @@ export default function ChatsPage() {
             style={{
               flex: 1, overflowY: 'auto',
               padding: '32px 36px 24px',
-              background: 'linear-gradient(160deg, #f0f4ff 0%, #f7f9ff 50%, #eef2fb 100%)',
+              background: '#fafbff',
             }}
           >
             {/* Empty state */}
             {messages.length === 0 && (
-              <div style={{ textAlign: 'center', marginTop: 48, animation: 'chatFadeIn 0.4s ease-out' }}>
-                <div style={{
-                  width: 80, height: 80, borderRadius: '50%', margin: '0 auto 22px',
-                  background: 'linear-gradient(135deg, #ede9fe, #ddd6fe)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '2.2rem',
-                  boxShadow: '0 8px 32px rgba(99,102,241,0.2)',
-                }}>
-                  <BotIcon />
+              <div style={{ textAlign: 'center', marginTop: 60, animation: 'chatFadeIn 0.4s ease-out' }}>
+                
+                <div style={{ position: 'relative', display: 'inline-block', marginBottom: 28 }}>
+                  <div style={{
+                    position: 'absolute', inset: -20, background: 'radial-gradient(circle, #f4f0ff 0%, transparent 70%)', zIndex: 0,
+                  }} />
+                  <div style={{
+                    width: 88, height: 88, borderRadius: 24,
+                    background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 12px 40px rgba(124,58,237,0.1)',
+                    position: 'relative', zIndex: 1,
+                  }}>
+                    <FileText size={36} color="#7c3aed" />
+                  </div>
+                  <Sparkles size={16} color="#c4b5fd" style={{ position: 'absolute', top: -10, right: -10, zIndex: 1 }} />
+                  <Sparkles size={12} color="#c4b5fd" style={{ position: 'absolute', bottom: 10, left: -20, zIndex: 1 }} />
                 </div>
+
                 <h2 style={{
-                  fontSize: '1.15rem', fontWeight: 800, color: '#1e1b4b', marginBottom: 10,
+                  fontSize: '1.6rem', fontWeight: 900, color: '#0f172a', marginBottom: 16,
                   fontFamily: "'Inter', sans-serif", letterSpacing: '-0.03em',
                 }}>
                   {activeDoc
@@ -1030,8 +941,8 @@ export default function ChatsPage() {
                   }
                 </h2>
                 <p style={{
-                  fontSize: '0.85rem', color: '#6b7280',
-                  maxWidth: 400, margin: '0 auto 28px', lineHeight: 1.7,
+                  fontSize: '1rem', color: '#64748b',
+                  maxWidth: 500, margin: '0 auto 48px', lineHeight: 1.6,
                   fontFamily: "'Inter', sans-serif",
                 }}>
                   {activeDoc
@@ -1041,23 +952,32 @@ export default function ChatsPage() {
 
                 {/* Starter suggestions */}
                 {activeDoc && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', maxWidth: 540, margin: '0 auto' }}>
-                    {STARTERS.map(q => (
-                      <button
-                        key={q}
-                        className="starter-chip"
-                        onClick={() => { setInput(q); inputRef.current?.focus(); }}
-                        style={{
-                          padding: '8px 18px', borderRadius: 999,
-                          border: '1.5px solid rgba(99,102,241,0.2)',
-                          background: 'rgba(255,255,255,0.9)', color: '#4f46e5',
-                          fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
-                          fontFamily: "'Inter', sans-serif",
-                          boxShadow: '0 2px 8px rgba(99,102,241,0.07)',
-                          letterSpacing: '-0.01em',
-                        }}
-                      >{q}</button>
-                    ))}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, maxWidth: 800, margin: '0 auto' }}>
+                    {STARTERS.map((q, i) => {
+                      const icons = [<FileText/>, <Sparkles/>, <FileText/>, <FileText/>, <FileText/>, <FileText/>];
+                      return (
+                        <button
+                          key={q}
+                          className="starter-chip"
+                          onClick={() => { setInput(q); inputRef.current?.focus(); }}
+                          style={{
+                            padding: '20px', borderRadius: 16,
+                            border: '1px solid #f1f5f9',
+                            background: '#fff', color: '#1e293b',
+                            fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer',
+                            fontFamily: "'Inter', sans-serif",
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.02)',
+                            textAlign: 'left', display: 'flex', alignItems: 'center', gap: 16,
+                          }}
+                        >
+                          <div style={{ width: 36, height: 36, borderRadius: 10, background: '#f5f3ff', color: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            {React.cloneElement(icons[i % icons.length], { size: 18 })}
+                          </div>
+                          <span style={{ flex: 1, lineHeight: 1.4 }}>{q}</span>
+                          <ChevronRight size={18} color="#94a3b8" />
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1073,51 +993,77 @@ export default function ChatsPage() {
 
           {/* ── Input bar ── */}
           <div style={{
-            padding: '14px 24px 16px',
-            borderTop: '1px solid rgba(226,232,240,0.7)',
-            background: 'rgba(255,255,255,0.97)',
-            backdropFilter: 'blur(12px)',
+            padding: '24px 40px 32px',
+            background: '#fafbff',
             flexShrink: 0,
           }}>
-            {!activeDoc && documents.length > 0 && (
-              <p style={{
-                textAlign: 'center', fontSize: '0.78rem', color: '#9ca3af',
-                marginBottom: 10, marginTop: 0,
-                fontFamily: "'Inter', sans-serif",
-              }}>
-                ← Select a note from the sidebar to enable chat
-              </p>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: 8, paddingLeft: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>Explanation Level:</span>
-                <select 
-                  value={level}
-                  onChange={(e) => setLevel(e.target.value)}
-                  disabled={streaming || !activeDoc}
-                  style={{
-                    padding: '4px 8px', borderRadius: 6,
-                    border: '1px solid #cbd5e1',
-                    fontSize: '0.75rem', fontFamily: "'Inter', sans-serif",
-                    color: '#475569', background: '#f8fafc',
-                    outline: 'none', cursor: (!activeDoc || streaming) ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  <option value="beginner">Beginner</option>
-                  <option value="medium">Medium</option>
-                  <option value="advanced">Advanced</option>
-                </select>
-              </div>
-            </div>
             <div style={{
-              display: 'flex', gap: 10, alignItems: 'flex-end',
-              background: '#f8faff',
-              border: '1.5px solid',
-              borderColor: streaming ? 'rgba(99,102,241,0.35)' : '#e2e8f0',
-              borderRadius: 18, padding: '10px 12px',
+              display: 'flex', alignItems: 'center',
+              background: '#fff',
+              border: '1px solid #f1f5f9',
+              borderRadius: 24, padding: '8px 10px',
               transition: 'all 0.2s ease',
-              boxShadow: streaming ? '0 0 0 4px rgba(99,102,241,0.07)' : '0 2px 8px rgba(99,102,241,0.04)',
+              boxShadow: streaming ? '0 4px 16px rgba(124,58,237,0.08)' : '0 8px 24px rgba(0,0,0,0.04)',
+              maxWidth: 900, margin: '0 auto',
             }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: '#f8fafc', border: '1px solid #f1f5f9',
+                borderRadius: 14, padding: '8px 12px',
+                marginRight: 12,
+              }}>
+                <GraduationCap size={16} color="#7c3aed" />
+                <div style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => {
+                      if (!streaming && activeDoc) setShowLevelDropdown(!showLevelDropdown);
+                    }}
+                    disabled={streaming || !activeDoc}
+                    style={{
+                      border: 'none', background: 'transparent',
+                      fontSize: '0.85rem', fontWeight: 600, fontFamily: "'Inter', sans-serif",
+                      color: '#334155', display: 'flex', alignItems: 'center', gap: 6,
+                      cursor: (!activeDoc || streaming) ? 'not-allowed' : 'pointer',
+                      padding: 0, outline: 'none',
+                    }}
+                  >
+                    <span style={{ textTransform: 'capitalize' }}>{level}</span>
+                    <ChevronRight size={14} color="#64748b" style={{ transform: showLevelDropdown ? 'rotate(-90deg)' : 'rotate(90deg)', transition: 'transform 0.2s' }} />
+                  </button>
+                  
+                  {showLevelDropdown && (
+                    <div style={{
+                      position: 'absolute', bottom: 'calc(100% + 20px)', left: -20,
+                      background: '#fff', borderRadius: 12, padding: 6,
+                      boxShadow: '0 10px 25px rgba(0,0,0,0.1), 0 4px 6px rgba(0,0,0,0.05)',
+                      border: '1px solid #f1f5f9', zIndex: 50, minWidth: 120,
+                      display: 'flex', flexDirection: 'column', gap: 2,
+                    }}>
+                      {['beginner', 'medium', 'advanced'].map((lvl) => (
+                        <button
+                          key={lvl}
+                          onClick={() => { setLevel(lvl); setShowLevelDropdown(false); }}
+                          style={{
+                            padding: '8px 12px', border: 'none', borderRadius: 8,
+                            background: level === lvl ? '#f5f3ff' : 'transparent',
+                            color: level === lvl ? '#7c3aed' : '#475569',
+                            fontSize: '0.85rem', fontWeight: level === lvl ? 700 : 500,
+                            textAlign: 'left', cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+                            textTransform: 'capitalize', transition: 'all 0.15s',
+                          }}
+                          onMouseEnter={e => { if (level !== lvl) e.currentTarget.style.background = '#f8fafc'; }}
+                          onMouseLeave={e => { if (level !== lvl) e.currentTarget.style.background = 'transparent'; }}
+                        >
+                          {lvl}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ width: 1, height: 24, background: '#e2e8f0', marginRight: 16 }} />
+
               <textarea
                 ref={inputRef}
                 className="chat-input"
@@ -1130,16 +1076,16 @@ export default function ChatsPage() {
                 }}
                 onKeyDown={onKeyDown}
                 placeholder={activeDoc
-                  ? `Ask anything about "${cleanFilename(activeDoc.filename)}"…`
-                  : 'Select a note first…'
+                  ? `Ask anything about "${cleanFilename(activeDoc.filename)}"...`
+                  : 'Select a note first...'
                 }
                 disabled={!activeDoc || streaming}
                 style={{
                   flex: 1, resize: 'none', border: 'none', background: 'transparent',
-                  fontFamily: "'Inter', 'system-ui', sans-serif",
-                  fontSize: '0.92rem', color: '#1e293b',
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: '0.95rem', color: '#0f172a',
                   lineHeight: 1.55, overflowY: 'auto', minHeight: 24, maxHeight: 130,
-                  padding: 0, letterSpacing: '-0.005em',
+                  padding: '4px 16px', outline: 'none', boxShadow: 'none',
                 }}
               />
               <button
@@ -1147,38 +1093,37 @@ export default function ChatsPage() {
                 onClick={sendMessage}
                 disabled={!input.trim() || !activeDoc || streaming}
                 style={{
-                  width: 38, height: 38, borderRadius: 11, border: 'none',
+                  width: 44, height: 44, borderRadius: 14, border: 'none',
                   background: (!input.trim() || !activeDoc || streaming)
-                    ? '#e8edf5'
-                    : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                  color: (!input.trim() || !activeDoc || streaming) ? '#9ca3af' : '#fff',
+                    ? '#e2e8f0'
+                    : '#a78bfa',
+                  color: '#fff',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: (!input.trim() || !activeDoc || streaming) ? 'not-allowed' : 'pointer',
                   flexShrink: 0,
-                  boxShadow: (!input.trim() || !activeDoc || streaming)
-                    ? 'none'
-                    : '0 4px 14px rgba(99,102,241,0.4)',
+                  transition: 'all 0.2s',
                 }}
               >
                 {streaming
                   ? <div style={{
-                    width: 14, height: 14,
-                    border: '2px solid rgba(156,163,175,0.3)',
-                    borderTopColor: '#9ca3af',
+                    width: 16, height: 16,
+                    border: '2.5px solid rgba(255,255,255,0.4)',
+                    borderTopColor: '#fff',
                     borderRadius: '50%',
                     animation: 'chatSpin 0.65s linear infinite',
                   }} />
-                  : <SendIcon />
+                  : <Send size={18} />
                 }
               </button>
             </div>
-            <p style={{
-              textAlign: 'center', fontSize: '0.65rem', color: '#c4cad5',
-              marginTop: 8, marginBottom: 0,
-              fontFamily: "'Inter', sans-serif", letterSpacing: '0.01em',
+            
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              marginTop: 16, color: '#94a3b8', fontSize: '0.75rem', fontFamily: "'Inter', sans-serif", fontWeight: 500
             }}>
-              Powered by Ollama llama3.1 · Answers strictly grounded in your uploaded notes · Enter to send, Shift+Enter for newline
-            </p>
+              <ShieldCheck size={14} />
+              <span>Grounded answers • Llama 3.1 • Local processing • Your data stays private</span>
+            </div>
           </div>
         </div>
       </div>

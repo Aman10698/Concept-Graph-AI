@@ -5,6 +5,7 @@ import { extractTextFromFile } from '../services/textExtractionService'
 import { useTopicExtraction } from '../hooks/useTopicExtraction'
 import { useAuth } from '../context/AuthContext'
 import { createSession } from '../services/sessionService'
+import { Lock } from 'lucide-react'
 
 /* ─── strip course codes from subject names ─── */
 function stripCode(s) {
@@ -108,28 +109,37 @@ export default function UploadPage() {
 
   /* ─── UI ─── */
   return (
-    <div style={{ padding: '28px', maxWidth: 680, margin: '0 auto' }}>
+    <div style={{ padding: '60px 28px', maxWidth: 740, margin: '0 auto', fontFamily: "'Inter', sans-serif" }}>
 
       {/* Page header */}
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: '1.7rem', fontWeight: 800, color: '#0f172a',
-          letterSpacing: '-0.03em', marginBottom: 6 }}>
+      <div style={{ marginBottom: 40, textAlign: 'center' }}>
+        <h1 style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a',
+          letterSpacing: '-0.03em', marginBottom: 12 }}>
           Upload Your Syllabus
         </h1>
-        <p style={{ color: '#6b7280', fontSize: '0.9rem', lineHeight: 1.6 }}>
-          Drop a PDF or image — we'll extract topics and build your personalised practice graph automatically.
+        <p style={{ color: '#64748b', fontSize: '0.95rem', lineHeight: 1.6, maxWidth: 540, margin: '0 auto' }}>
+          Upload a PDF or image file and we'll automatically extract topics, identify key concepts, and build your personalised practice graph.
         </p>
       </div>
 
       {/* ── Idle / upload state ── */}
       {(phase === 'idle' || phase === 'uploading') && (
-        <div className="t-card" style={{ padding: '32px' }}>
-          <FileUpload
-            onUploadSuccess={handleUploadSuccess}
-            onUploadError={handleUploadError}
-          />
-
-        </div>
+        <>
+          <div style={{ 
+            padding: '32px', background: '#fff', borderRadius: 20,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.04)', marginBottom: 32
+          }}>
+            <FileUpload
+              onUploadSuccess={handleUploadSuccess}
+              onUploadError={handleUploadError}
+            />
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: '#94a3b8' }}>
+            <Lock size={14} />
+            <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>Your files are secure and never shared with anyone.</span>
+          </div>
+        </>
       )}
 
       {/* ── Processing: extracting topics ── */}

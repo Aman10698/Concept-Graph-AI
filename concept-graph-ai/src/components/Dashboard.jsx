@@ -173,13 +173,17 @@ export default function Dashboard() {
   const weak             = nodeRatings.filter(r => r.rating === 'weak').length
 
   // Avg quiz score across all evaluated nodes
-  const scoredRatings    = nodeRatings.filter(r => typeof r.score === 'number')
+  const scoredRatings    = nodeRatings.filter(r => typeof r.score === 'number' || typeof r.confidence === 'number')
   const accuracy         = scoredRatings.length > 0
-    ? Math.round(scoredRatings.reduce((sum, r) => sum + r.score, 0) / scoredRatings.length)
+    ? Math.round(scoredRatings.reduce((sum, r) => sum + (r.score ?? r.confidence ?? 0), 0) / scoredRatings.length)
     : 0
 
-  // Mastery = % of ALL nodes rated 'strong'
-  const mastery = totalTopics > 0 ? Math.round((strong / totalTopics) * 100) : 0
+  // Mastery = Average score across ALL nodes in the graph
+  const totalScore = answeredNodes.reduce((sum, n) => {
+    const r = evalData[n]
+    return sum + (r.score ?? r.confidence ?? 0)
+  }, 0)
+  const mastery = totalTopics > 0 ? Math.round(totalScore / totalTopics) : 0
 
   const courseTitle = topicsData?.subject || topicsData?.title || 'Course'
 

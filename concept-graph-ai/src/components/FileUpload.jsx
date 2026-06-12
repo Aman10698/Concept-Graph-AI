@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
+import { Upload, FileText, Sparkles, ArrowUp } from 'lucide-react';
 
 const FileUpload = ({ onUploadSuccess, onUploadError }) => {
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -76,12 +77,12 @@ const FileUpload = ({ onUploadSuccess, onUploadError }) => {
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         style={{
-          border: `2px dashed ${isDragging ? '#6366f1' : isUploading ? '#22c55e' : '#c7d2fe'}`,
-          borderRadius: 14,
-          padding: '36px 24px',
+          border: `1.5px dashed ${isDragging ? '#7c3aed' : isUploading ? '#22c55e' : '#c4b5fd'}`,
+          borderRadius: 20,
+          padding: '48px 24px',
           textAlign: 'center',
           cursor: isUploading ? 'not-allowed' : 'pointer',
-          background: isDragging ? '#eff6ff' : isUploading ? '#f0fdf4' : '#fafbff',
+          background: isDragging ? '#f5f3ff' : isUploading ? '#f0fdf4' : 'transparent',
           transition: 'all .2s',
           userSelect: 'none',
         }}
@@ -96,35 +97,62 @@ const FileUpload = ({ onUploadSuccess, onUploadError }) => {
           style={{ display: 'none' }}
         />
 
-        {/* Icon */}
-        <div style={{
-          width: 56, height: 56, borderRadius: '50%', margin: '0 auto 16px',
-          background: isUploading ? 'linear-gradient(135deg,#dcfce7,#bbf7d0)' : 'linear-gradient(135deg,#eff6ff,#dbeafe)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '1.6rem',
-          boxShadow: '0 4px 12px rgba(99,102,241,0.15)',
-        }}>
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"
-            stroke={isUploading ? '#16a34a' : isDragging ? '#6366f1' : '#3b82f6'}
-            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            {isUploading
-              ? <><circle cx="12" cy="12" r="10"/><polyline points="8 12 12 8 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></>
-              : <><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></>
-            }
-          </svg>
+        {/* Custom Illustration */}
+        <div style={{ position: 'relative', width: 140, height: 120, margin: '0 auto 24px' }}>
+          {/* Cloud background blobs */}
+          <div style={{
+            position: 'absolute', top: '10%', left: '0%', width: 140, height: 80,
+            background: '#f5f3ff', borderRadius: '40px', zIndex: 0
+          }} />
+          <div style={{
+            position: 'absolute', top: '-10%', left: '25%', width: 70, height: 70,
+            background: '#f5f3ff', borderRadius: '50%', zIndex: 0
+          }} />
+
+          {/* Sparkles */}
+          <Sparkles size={14} color="#c4b5fd" style={{ position: 'absolute', top: -5, left: 10, zIndex: 1 }} />
+          <Sparkles size={10} color="#c4b5fd" style={{ position: 'absolute', top: 20, right: 10, zIndex: 1 }} />
+          <Sparkles size={12} color="#c4b5fd" style={{ position: 'absolute', bottom: 10, left: 0, zIndex: 1 }} />
+
+          {/* Document Card */}
+          <div style={{
+            position: 'absolute', top: '5%', left: '50%', transform: 'translateX(-50%)',
+            width: 64, height: 86, background: '#e0e7ff', borderRadius: 8,
+            boxShadow: '0 4px 12px rgba(124,58,237,0.1)', zIndex: 2,
+            display: 'flex', flexDirection: 'column', gap: 8, padding: '16px 12px',
+            overflow: 'hidden'
+          }}>
+            {/* Folded corner effect */}
+            <div style={{ position: 'absolute', top: 0, right: 0, width: 20, height: 20, background: '#c7d2fe', borderBottomLeftRadius: 8 }} />
+            
+            <div style={{ width: '80%', height: 4, background: '#c7d2fe', borderRadius: 2, marginTop: 8 }} />
+            <div style={{ width: '100%', height: 4, background: '#c7d2fe', borderRadius: 2 }} />
+            <div style={{ width: '60%', height: 4, background: '#c7d2fe', borderRadius: 2 }} />
+          </div>
+
+          {/* Upload Button overlay */}
+          <div style={{
+            position: 'absolute', bottom: '15%', right: '22%',
+            width: 28, height: 28, borderRadius: '50%', background: '#7c3aed',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(124,58,237,0.3)', zIndex: 3,
+            color: '#fff'
+          }}>
+            <ArrowUp size={16} strokeWidth={3} />
+          </div>
         </div>
 
         {isUploading ? (
           <div>
-            <p style={{ fontWeight: 700, fontSize: '1rem', color: '#15803d', marginBottom: 6 }}>
+            <p style={{ fontWeight: 800, fontSize: '1.1rem', color: '#15803d', marginBottom: 6, fontFamily: "'Inter', sans-serif" }}>
               Uploading {fileName}…
             </p>
-            <p style={{ fontSize: '0.82rem', color: '#6b7280', marginBottom: 16 }}>Please wait</p>
+            <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: 16, fontFamily: "'Inter', sans-serif" }}>Please wait</p>
             {/* Progress bar */}
             <div style={{ maxWidth: 320, margin: '0 auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: '0.78rem', color: '#6b7280' }}>Progress</span>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#22c55e' }}>{uploadProgress}%</span>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', fontFamily: "'Inter', sans-serif" }}>Progress</span>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#22c55e', fontFamily: "'Inter', sans-serif" }}>{uploadProgress}%</span>
               </div>
               <div style={{ height: 8, background: '#dcfce7', borderRadius: 999, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${uploadProgress}%`, background: '#22c55e', borderRadius: 999, transition: 'width .3s' }} />
@@ -133,21 +161,25 @@ const FileUpload = ({ onUploadSuccess, onUploadError }) => {
           </div>
         ) : (
           <div>
-            <p style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a', marginBottom: 6 }}>
-              {isDragging ? 'Drop your file here' : 'Click to upload or drag & drop'}
+            <p style={{ fontWeight: 800, fontSize: '1.1rem', color: '#0f172a', marginBottom: 6, fontFamily: "'Inter', sans-serif" }}>
+              {isDragging ? 'Drop your file here' : 'Drag & drop your file here'}
             </p>
-            <p style={{ fontSize: '0.82rem', color: '#9ca3af', marginBottom: 16 }}>
-              PDF, JPG, PNG — max 10 MB
+            <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: 10, fontFamily: "'Inter', sans-serif" }}>
+              or click to browse
+            </p>
+            <p style={{ fontSize: '0.85rem', color: '#9ca3af', marginBottom: 24, fontFamily: "'Inter', sans-serif" }}>
+              PDF, JPG, PNG — up to 10 MB
             </p>
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 8,
-              padding: '10px 24px', borderRadius: 9,
-              background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
-              color: '#fff', fontWeight: 700, fontSize: '0.875rem',
-              boxShadow: '0 4px 12px rgba(99,102,241,0.25)',
+              padding: '12px 28px', borderRadius: 8,
+              background: '#7c3aed',
+              color: '#fff', fontWeight: 600, fontSize: '0.9rem',
+              boxShadow: '0 4px 14px rgba(124,58,237,0.25)',
               pointerEvents: 'none',   /* click handled by parent */
+              fontFamily: "'Inter', sans-serif"
             }}>
-              Choose File
+              <Upload size={16} /> Choose File
             </div>
           </div>
         )}
